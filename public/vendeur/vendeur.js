@@ -73,7 +73,7 @@ async function products(v) {
   v.innerHTML = `<div class="card"><button onclick="productForm()">+ Ajouter un produit</button></div>
   <div class="card tw"><table><tr><th></th><th>Produit</th><th>Prix</th><th>Stock</th><th>Partager</th><th></th></tr>
   ${PRODUCTS.map(p => `<tr><td>${p.image ? `<img class="pimg" src="${esc(p.image)}">` : '<div class="pimg"></div>'}</td>
-    <td><b>${esc(p.name)}</b>${p.active ? '' : '<br><span class="badge s-annule">Masqué</span>'}</td>
+    <td><b>${esc(p.name)}</b>${p.category ? `<br><span class="mut">${esc((ME.categories.find(c => c.slug === p.category) || {}).name || '')}</span>` : ''}${p.active ? '' : '<br><span class="badge s-annule">Masqué</span>'}</td>
     <td>${money(p.price)}${p.compare_price > p.price ? `<br><s class="mut">${money(p.compare_price)}</s>` : ''}</td><td>${p.stock}</td>
     <td><div class="share"><a class="btn" target="_blank" href="/p/${esc(p.slug)}">👁 Page</a>
       <button class="sm" onclick="copy(pageUrl(PRODUCTS.find(x=>x.id==${p.id})))">🔗 Lien</button>
@@ -83,37 +83,72 @@ async function products(v) {
     || '<tr><td colspan=6 class="mut">Aucun produit — ajoutez le premier !</td></tr>'}</table></div>
   <p class="mut">🔗 Lien = page produit avec formulaire de commande. Ajoutez <code>?canal=ID</code> pour suivre une pub. &lt;/&gt; Code = formulaire à coller sur votre propre site.</p>`;
 }
+let PICS = []; // [{url}] photos existantes ou {data} nouvelles
+const photosOf = p => { try { const g = JSON.parse(p.gallery || '[]'); return g.length ? g : (p.image ? [p.image] : []); } catch { return p.image ? [p.image] : []; } };
 function productForm(id) {
   const p = PRODUCTS.find(x => x.id === id) || { active: 1 };
+  PICS = photosOf(p).map(url => ({ url }));
   modal(`<h3>${id ? 'Modifier' : 'Nouveau'} produit</h3><form class="f" onsubmit="saveProduct(event,${id || 0})">
-    <label>Photo <input type="file" accept="image/*" onchange="pickImage(this)"></label>
-    <img id="prev" class="prev" src="${esc(p.image || '')}" ${p.image ? '' : 'hidden'}><input type="hidden" name="image_data">
-    <input name="name" placeholder="Nom du produit" value="${esc(p.name)}" required>
-    <div class="row"><input name="price" type="number" step="0.01" min="0" placeholder="Prix de vente" value="${p.price ?? ''}" required>
-    <input name="compare_price" type="number" step="0.01" min="0" placeholder="Ancien prix (barré)" value="${p.compare_price ?? ''}"></div>
-    <input name="stock" type="number" min="0" placeholder="Stock" value="${p.stock ?? ''}">
-    <textarea name="description" rows="5" placeholder="Description, avantages, livraison…">${esc(p.description)}</textarea>
+    <label class="lb">Photos (6 max — la 1re est la photo principale)</label><div class="pics" id="pics"></div>
+    <input type="file" id="picf" accept="image/*" multiple hidden onchange="addPics(this)">
+    <label class="lb">Nom du produit</label><input name="name" value="${esc(p.name)}" required>
+    <div class="row"><div><label class="lb">Prix de vente</label><input name="price" type="number" step="0.01" min="0" value="${p.price ?? ''}" required></div>
+    <div><label class="lb">Ancien prix (barré)</label><input name="compare_price" type="number" step="0.01" min="0" value="${p.compare_price ?? ''}"></div></div>
+    <div class="row"><div><label class="lb">Catégorie</label><select name="category"><option value="">— Choisir —</option>
+      ${ME.categories.map(c => `<option value="${c.slug}" ${c.slug === p.category ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+    <div><label class="lb">Stock</label><input name="stock" type="number" min="0" value="${p.stock ?? ''}"></div></div>
+    <label class="lb">Courte description (affichée au-dessus du formulaire)</label>
+    <textarea name="short_description" rows="2" placeholder="Ex : Sac en cuir véritable, livraison 24h à Kinshasa.">${esc(p.short_description)}</textarea>
+    <label class="lb">Description complète — Markdown</label>
+    <div class="mdbar"><button type="button" onclick="mdWrap('**','**','gras')"><b>B</b></button><button type="button" onclick="mdWrap('*','*','italique')"><i>I</i></button>
+      <button type="button" onclick="mdLine('## ')">Titre</button><button type="button" onclick="mdLine('- ')">• Liste</button><button type="button" onclick="mdLine('✅ ')">✅</button>
+      <button type="button" onclick="mdLine('> ')">❝ Citation</button><button type="button" onclick="mdWrap('[','](https://)','texte du lien')">🔗 Lien</button>
+      <button type="button" id="mdpv" onclick="mdPreview()">👁 Aperçu</button></div>
+    <textarea name="description" id="mdtxt" rows="9" placeholder="## Pourquoi choisir ce produit ?&#10;- **Qualité** premium&#10;- Livraison rapide&#10;&#10;> Satisfait ou remboursé">${esc(p.description)}</textarea>
+    <div id="mdout" class="mdprev" hidden></div>
     <label><input type="checkbox" name="active" style="width:auto" ${p.active ? 'checked' : ''}> Visible dans la boutique</label>
     <button>Enregistrer</button></form>`);
+  drawPics();
 }
-// Redimensionne la photo côté navigateur (max 1200 px, JPEG) pour des pages rapides
-function pickImage(input) {
-  const f = input.files[0]; if (!f) return;
-  const img = new Image(); img.onload = () => {
-    const k = Math.min(1, 1200 / Math.max(img.width, img.height)), c = document.createElement('canvas');
-    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    const data = c.toDataURL('image/jpeg', 0.85);
-    input.form.image_data.value = data; $('#prev').src = data; $('#prev').hidden = false; URL.revokeObjectURL(img.src);
-  };
-  img.src = URL.createObjectURL(f);
+function drawPics() {
+  $('#pics').innerHTML = PICS.map((x, i) => `<div class="pic"><img src="${esc(x.url || x.data)}">${i ? '' : '<span>Principale</span>'}
+    <button type="button" class="gray" onclick="PICS.splice(${i},1);drawPics()">✕</button></div>`).join('')
+    + (PICS.length < 6 ? `<div class="addpic" onclick="$('#picf').click()">＋</div>` : '');
+}
+// Redimensionne chaque photo côté navigateur (max 1200 px, JPEG) pour des pages rapides
+function addPics(input) {
+  [...input.files].slice(0, 6 - PICS.length).forEach(f => {
+    const img = new Image(); img.onload = () => {
+      const k = Math.min(1, 1200 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      if (PICS.length < 6) PICS.push({ data: c.toDataURL('image/jpeg', 0.85) }); drawPics(); URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(f);
+  });
+  input.value = '';
+}
+function mdWrap(a, b, ph) {
+  const t = $('#mdtxt'), s = t.selectionStart, e = t.selectionEnd, sel = t.value.slice(s, e) || ph;
+  t.setRangeText(a + sel + b, s, e, 'end'); t.focus();
+}
+function mdLine(prefix) {
+  const t = $('#mdtxt'), s = t.value.lastIndexOf('\n', t.selectionStart - 1) + 1;
+  t.setRangeText(prefix, s, s, 'end'); t.focus();
+}
+function mdPreview() {
+  const on = $('#mdout').hidden; $('#mdout').hidden = !on; $('#mdtxt').hidden = on; $('#mdpv').classList.toggle('on', on);
+  if (on) $('#mdout').innerHTML = MirebMarkdown.render($('#mdtxt').value) || '<span class="mut">Rien à afficher</span>';
 }
 async function saveProduct(e, id) {
   e.preventDefault(); const d = formData(e.target);
-  d.active = e.target.active.checked ? 1 : 0; if (!d.image_data) delete d.image_data;
+  d.active = e.target.active.checked ? 1 : 0;
   d.compare_price = d.compare_price === '' ? null : +d.compare_price; d.stock = +d.stock || 0; d.price = +d.price;
-  await api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d);
-  toast('Produit enregistré'); closeModal(); route();
+  // L'ordre des photos est conservé : existantes gardées puis nouvelles
+  d.gallery_keep = PICS.filter(x => x.url).map(x => x.url); d.gallery_new = PICS.filter(x => x.data).map(x => x.data);
+  const btn = e.target.querySelector('button:last-child'); btn.disabled = true; btn.textContent = 'Enregistrement…';
+  try { await api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d); toast('Produit enregistré'); closeModal(); route(); }
+  finally { btn.disabled = false; btn.textContent = 'Enregistrer'; }
 }
 async function delProduct(id) { if (confirm('Supprimer ce produit ?')) { await api('/api/products/' + id, 'DELETE'); route(); } }
 

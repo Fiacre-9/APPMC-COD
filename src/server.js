@@ -13,7 +13,7 @@ const conn = require('./connectors');
 const SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
 if (!process.env.JWT_SECRET) console.warn('⚠️  JWT_SECRET non défini dans .env — clé temporaire utilisée');
 const app = express();
-app.use(express.json({ limit: '6mb', verify: (req, _r, buf) => { req.rawBody = buf; } }));
+app.use(express.json({ limit: '12mb', verify: (req, _r, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 

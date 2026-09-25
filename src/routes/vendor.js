@@ -2,7 +2,7 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { db, STATUSES } = require('../db');
+const { db, STATUSES, CATEGORIES } = require('../db');
 const S = require('../services');
 const { saveImage } = require('../uploads');
 
@@ -45,7 +45,7 @@ module.exports = (SECRET) => {
     if (!p) throw new Error('Produit introuvable'); return p;
   };
 
-  router.get('/api/me', (req, res) => res.json({ ...req.vendor, statuses: STATUSES, currency: process.env.CURRENCY || '$' }));
+  router.get('/api/me', (req, res) => res.json({ ...req.vendor, statuses: STATUSES, categories: CATEGORIES, currency: process.env.CURRENCY || '$' }));
   router.put('/api/me', wrap((req, res) => {
     const d = pick(req.body, ['shop_name', 'phone', 'whatsapp', 'description']); const k = Object.keys(d);
     if (k.length) db.prepare(`UPDATE vendors SET ${k.map(x => x + '=?')} WHERE id=?`).run(...Object.values(d), req.vendor.id);
@@ -66,19 +66,29 @@ module.exports = (SECRET) => {
   });
 
   // ---------- Produits ----------
-  const FIELDS = ['name', 'price', 'compare_price', 'stock', 'description', 'active'];
+  const FIELDS = ['name', 'price', 'compare_price', 'stock', 'short_description', 'description', 'active', 'category'];
+  const MAX_PHOTOS = 6;
+  // Photos : on garde celles déjà enregistrées pour ce produit (gallery_keep) + les nouvelles (gallery_new, data URL)
+  function applyPhotos(body, d, current = []) {
+    if (body.gallery_keep === undefined && body.gallery_new === undefined && !body.image_data) return;
+    const keep = (Array.isArray(body.gallery_keep) ? body.gallery_keep : current).filter(u => current.includes(u));
+    const fresh = [...(Array.isArray(body.gallery_new) ? body.gallery_new : []), ...(body.image_data ? [body.image_data] : [])];
+    if (keep.length + fresh.length > MAX_PHOTOS) throw new Error(`${MAX_PHOTOS} photos maximum`);
+    const all = [...keep, ...fresh.map(saveImage)];
+    d.gallery = JSON.stringify(all); d.image = all[0] || '';
+  }
+  const photosOf = p => { try { const g = JSON.parse(p.gallery || '[]'); return g.length ? g : (p.image ? [p.image] : []); } catch { return []; } };
+  const checkCat = d => { if (d.category && !CATEGORIES.some(c => c.slug === d.category)) throw new Error('Catégorie inconnue'); };
   router.get('/api/products', (req, res) => res.json(db.prepare('SELECT * FROM products WHERE vendor_id=? ORDER BY id DESC').all(req.vendor.id)));
   router.post('/api/products', wrap((req, res) => {
     if (!req.body.name) throw new Error('Nom du produit obligatoire');
-    const d = pick(req.body, FIELDS);
-    if (req.body.image_data) d.image = saveImage(req.body.image_data);
+    const d = pick(req.body, FIELDS); checkCat(d); applyPhotos(req.body, d);
     d.vendor_id = req.vendor.id; const k = Object.keys(d);
     const id = db.prepare(`INSERT INTO products(${k}) VALUES(${k.map(() => '?')})`).run(...Object.values(d)).lastInsertRowid;
     S.productSlug(id); res.json({ id });
   }));
   router.put('/api/products/:id', wrap((req, res) => {
-    const p = own(req); const d = pick(req.body, FIELDS);
-    if (req.body.image_data) d.image = saveImage(req.body.image_data);
+    const p = own(req); const d = pick(req.body, FIELDS); checkCat(d); applyPhotos(req.body, d, photosOf(p));
     const k = Object.keys(d);
     if (k.length) db.prepare(`UPDATE products SET ${k.map(x => x + '=?')} WHERE id=?`).run(...Object.values(d), p.id);
     if (d.name && d.name !== p.name) S.productSlug(p.id);

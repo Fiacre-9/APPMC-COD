@@ -22,6 +22,13 @@ const db = {
   },
 };
 
+// Catégories de la boutique (icônes comme le thème Mireb COD)
+const CATEGORIES = [
+  ['mode', 'Mode', '👗'], ['chaussures', 'Chaussures', '👟'], ['beaute', 'Beauté', '💄'], ['sante', 'Santé', '💊'],
+  ['electronique', 'Électronique', '📱'], ['maison', 'Maison', '🏠'], ['cuisine', 'Cuisine', '🍳'], ['enfants', 'Enfants', '🧸'],
+  ['sport', 'Sport', '⚽'], ['accessoires', 'Accessoires', '👜'], ['alimentation', 'Alimentation', '🛒'], ['autres', 'Autres', '📦'],
+].map(([slug, name, icon]) => ({ slug, name, icon }));
+
 const STATUSES = ['nouveau', 'en_confirmation', 'confirme', 'en_preparation', 'expedie',
   'en_livraison', 'livre', 'paye', 'annule', 'retourne'];
 
@@ -63,10 +70,13 @@ addCol('products', 'description', "TEXT DEFAULT ''");
 addCol('products', 'image', "TEXT DEFAULT ''");
 addCol('products', 'compare_price', 'REAL');
 addCol('products', 'active', 'INTEGER DEFAULT 1');
+addCol('products', 'category', "TEXT DEFAULT ''");
+addCol('products', 'short_description', "TEXT DEFAULT ''");
+addCol('products', 'gallery', "TEXT DEFAULT '[]'");
 addCol('orders', 'vendor_id', 'INTEGER');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS products_slug ON products(slug)');
 
 const getSetting = (k, d = '') => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value ?? d;
 const setSetting = (k, v) => db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v));
 
-module.exports = { db, STATUSES, getSetting, setSetting };
+module.exports = { db, STATUSES, CATEGORIES, getSetting, setSetting };
