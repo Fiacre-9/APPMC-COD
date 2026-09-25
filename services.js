@@ -1,0 +1,175 @@
+const { db } = require('./db');
+const conn = require('./connectors');
+
+// ---------- CRM ----------
+function upsertCustomer({ name, phone, address, city }) {
+  const p = String(phone || '').trim();
+  const ex = db.prepare('SELECT * FROM customers WHERE phone=?').get(p);
+  if (ex) {
+    db.prepare('UPDATE customers SET name=COALESCE(?,name), address=COALESCE(?,address), city=COALESCE(?,city) WHERE id=?')
+      .run(name || null, address || null, city || null, ex.id);
+    return ex.id;
+  }
+  return db.prepare('INSERT INTO customers(name,phone,address,city) VALUES(?,?,?,?)').run(name, p, address, city).lastInsertRowid;
+}
+
+function customerStats(id) {
+  const s = db.prepare(`SELECT COUNT(*) n, SUM(status IN ('livre','paye')) ok, SUM(status IN ('annule','retourne')) ko,
+    COALESCE(SUM(CASE WHEN status IN ('livre','paye') THEN amount END),0) spent FROM orders WHERE customer_id=?`).get(id);
+  const done = (s.ok || 0) + (s.ko || 0);
+  const score = done ? Math.round(((s.ok || 0) / done) * 5 * 10) / 10 : null;
+  let segment = 'nouveau';
+  if (s.ko >= 2 && s.ko > s.ok) segment = 'risque';
+  else if (s.ok >= 10 || s.spent >= 1000) segment = 'vip';
+  else if (s.ok >= 4) segment = 'fidele';
+  else if (s.ok >= 1) segment = 'actif';
+  return { orders: s.n, delivered: s.ok || 0, failed: s.ko || 0, spent: s.spent, score, segment };
+}
+
+// ---------- Commandes ----------
+function createOrder(d) {
+  const product = d.product_id ? db.prepare('SELECT * FROM products WHERE id=? OR wc_id=?').get(d.product_id, d.product_id) : null;
+  const qty = +d.qty || 1;
+  const customer_id = upsertCustomer(d);
+  const amount = d.amount != null ? +d.amount : (product ? product.price * qty : 0);
+  const id = db.prepare(`INSERT INTO orders(wc_id,customer_id,product_id,product_name,qty,amount,name,phone,address,city,channel_id,status)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(d.wc_id || null, customer_id, product?.id || null, product?.name || d.product_name || '',
+    qty, amount, d.name, d.phone, d.address, d.city || '', d.channel_id || null, d.status || 'nouveau').lastInsertRowid;
+  db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(id, d.status || 'nouveau', 'Commande créée');
+  if (product) moveStock(product.id, -qty, 'sortie', `Commande #${id}`);
+  runAutomations('status:' + (d.status || 'nouveau'), id);
+  return id;
+}
+
+function setStatus(id, status, note = '') {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  if (!o) throw new Error('Commande introuvable');
+  db.prepare('UPDATE orders SET status=?, updated_at=CURRENT_TIMESTAMP, synced=0 WHERE id=?').run(status, id);
+  db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(id, status, note);
+
+  // Commission agent dès "livré"
+  if (status === 'livre' && o.agent_id) {
+    const a = db.prepare('SELECT * FROM agents WHERE id=?').get(o.agent_id);
+    if (a) db.prepare('INSERT OR IGNORE INTO commissions(agent_id,order_id,amount) VALUES(?,?,?)')
+      .run(a.id, id, Math.round(o.amount * a.commission_rate) / 100);
+  }
+  // Restock si annulé / retourné
+  if (['annule', 'retourne'].includes(status) && !['annule', 'retourne'].includes(o.status) && o.product_id)
+    moveStock(o.product_id, o.qty, 'entree', `Retour commande #${id}`);
+  // Auto-assignation livreur
+  if (status === 'confirme' && !o.courier_id) autoAssign(id);
+
+  runAutomations('status:' + status, id);
+  syncOrder(id).catch(() => {});
+}
+
+function autoAssign(orderId) {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
+  const city = (o.city || '').toLowerCase().trim();
+  const couriers = db.prepare(`SELECT c.*, (SELECT COUNT(*) FROM orders WHERE courier_id=c.id
+    AND status IN ('confirme','en_preparation','expedie','en_livraison')) load FROM couriers c WHERE auto_assign=1 ORDER BY load`).all();
+  const match = couriers.find(c => c.zones.split(',').map(z => z.trim().toLowerCase()).filter(Boolean).includes(city))
+    || couriers.find(c => !c.zones.trim());
+  if (match) {
+    db.prepare('UPDATE orders SET courier_id=? WHERE id=?').run(match.id, orderId);
+    db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(orderId, o.status, `Auto-assigné au livreur ${match.name}`);
+  }
+  return match?.id || null;
+}
+
+// ---------- Stock ----------
+function moveStock(product_id, qty, type, note) {
+  db.prepare('INSERT INTO stock_moves(product_id,qty,type,note) VALUES(?,?,?,?)').run(product_id, qty, type, note);
+  db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(qty, product_id);
+}
+
+// ---------- Soldes ----------
+const courierBalance = (id) => {
+  const collected = db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM orders WHERE courier_id=? AND status='livre'`).get(id).s;
+  const paid = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM courier_payments WHERE courier_id=?').get(id).s;
+  return Math.round((collected - paid) * 100) / 100;
+};
+const agentDue = (id) => db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE agent_id=? AND paid=0').get(id).s;
+
+// ---------- Automatisations ----------
+function render(tpl, o) {
+  return tpl.replace(/\{(\w+)\}/g, (_, k) => ({ id: o.id, nom: o.name, telephone: o.phone, adresse: o.address, ville: o.city,
+    produit: o.product_name, montant: o.amount, devise: process.env.CURRENCY || '$', statut: o.status })[k] ?? '');
+}
+
+async function execAutomation(a, o) {
+  const to = a.target === 'admin' ? (a.channel === 'email' ? process.env.ADMIN_EMAIL : process.env.ADMIN_PHONE) : (a.channel === 'email' ? null : o.phone);
+  let ok = 1, info = 'envoyé';
+  try { if (!to) throw new Error('destinataire manquant'); await conn.send(a.channel, to, render(a.template, o), `Commande #${o.id}`); }
+  catch (err) { ok = 0; info = err.message; }
+  db.prepare('INSERT OR IGNORE INTO automation_log(automation_id,order_id,ok,info) VALUES(?,?,?,?)').run(a.id, o.id, ok, info);
+}
+
+function runAutomations(trigger, orderId) {
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
+  db.prepare('SELECT * FROM automations WHERE active=1 AND trigger=? AND delay_hours=0').all(trigger)
+    .forEach(a => execAutomation(a, o));
+}
+
+// Automatisations différées (ex: commande "nouveau" > 24h) — appelé par le cron
+function runDelayedAutomations() {
+  db.prepare('SELECT * FROM automations WHERE active=1 AND delay_hours>0').all().forEach(a => {
+    const st = a.trigger.replace('status:', '');
+    db.prepare(`SELECT o.* FROM orders o WHERE o.status=? AND o.updated_at <= datetime('now', ?)
+      AND NOT EXISTS (SELECT 1 FROM automation_log l WHERE l.automation_id=? AND l.order_id=o.id)`)
+      .all(st, `-${a.delay_hours} hours`, a.id).forEach(o => execAutomation(a, o));
+  });
+}
+
+// ---------- Synchronisation WooCommerce ----------
+async function syncOrder(id) {
+  if (!conn.woo.enabled()) return;
+  const o = db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  const p = o.product_id ? db.prepare('SELECT wc_id FROM products WHERE id=?').get(o.product_id) : null;
+  if (!o.wc_id) {
+    const wc = await conn.woo.createOrder({ payment_method: 'mireb_cod', payment_method_title: 'Paiement à la livraison',
+      status: conn.WC_STATUS[o.status], billing: { first_name: o.name, phone: o.phone, address_1: o.address, city: o.city },
+      shipping: { first_name: o.name, address_1: o.address, city: o.city },
+      line_items: p?.wc_id ? [{ product_id: p.wc_id, quantity: o.qty }] : [] });
+    db.prepare('UPDATE orders SET wc_id=?, synced=1 WHERE id=?').run(wc.id, id);
+  } else {
+    await conn.woo.updateOrderStatus(o.wc_id, conn.WC_STATUS[o.status]);
+    db.prepare('UPDATE orders SET synced=1 WHERE id=?').run(id);
+  }
+}
+
+async function importProducts() {
+  let page = 1, n = 0, list;
+  do {
+    list = await conn.woo.products(page++);
+    for (const p of list) {
+      db.prepare(`INSERT INTO products(wc_id,name,price,stock) VALUES(?,?,?,?) ON CONFLICT(wc_id) DO UPDATE SET name=excluded.name, price=excluded.price`)
+        .run(p.id, p.name, +p.price || 0, p.stock_quantity || 0); n++;
+    }
+  } while (list.length === 100);
+  return n;
+}
+
+function importWcOrder(w) {
+  if (db.prepare('SELECT id FROM orders WHERE wc_id=?').get(w.id)) return null;
+  const li = w.line_items?.[0] || {};
+  const canal = w.meta_data?.find(m => m.key === 'mireb_canal')?.value;
+  return createOrder({ wc_id: w.id, name: `${w.billing.first_name} ${w.billing.last_name}`.trim(), phone: w.billing.phone,
+    address: w.billing.address_1, city: w.billing.city, product_id: li.product_id, product_name: li.name, qty: li.quantity,
+    amount: +w.total, channel_id: canal || null });
+}
+
+async function pullOrders() {
+  const since = db.prepare('SELECT MAX(created_at) m FROM orders WHERE wc_id IS NOT NULL').get().m;
+  const list = await conn.woo.orders(since ? new Date(since + 'Z').toISOString() : null);
+  return list.map(importWcOrder).filter(Boolean).length;
+}
+
+async function pushUnsynced() {
+  const ids = db.prepare('SELECT id FROM orders WHERE synced=0').all().map(r => r.id);
+  let ok = 0; for (const id of ids) { try { await syncOrder(id); ok++; } catch {} }
+  return { total: ids.length, ok };
+}
+
+module.exports = { upsertCustomer, customerStats, createOrder, setStatus, autoAssign, moveStock, courierBalance, agentDue,
+  runDelayedAutomations, importProducts, importWcOrder, pullOrders, pushUnsynced, syncOrder };

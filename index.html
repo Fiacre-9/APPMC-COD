@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mireb Livreur</title><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1d2330">
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#f5f6f8;color:#1d2330}
+header{background:#1d2330;color:#fff;padding:14px 16px;position:sticky;top:0}header small{color:#94a3b8}
+.o{background:#fff;margin:12px;border-radius:12px;padding:14px;box-shadow:0 1px 3px #0001}
+.o h3{margin:0 0 4px}.a{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.a a,.a button{padding:12px;border-radius:8px;border:0;font-size:15px;text-align:center;text-decoration:none;color:#fff;background:#2563eb}
+.ok{background:#16a34a!important;grid-column:1/-1}.ret{background:#94a3b8!important}.st{font-size:12px;background:#ede9fe;padding:2px 8px;border-radius:99px}
+p.m{text-align:center;color:#6b7280;padding:30px}
+</style></head>
+<body>
+<header><b id="n">Mireb Livreur</b><br><small id="gps">GPS : en attente…</small></header>
+<div id="list"><p class="m">Chargement…</p></div>
+<script>
+const T = new URLSearchParams(location.search).get('t') || localStorage.getItem('mireb_t');
+if (T) try { localStorage.setItem('mireb_t', T); } catch (e) {}
+const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const api = (u, m = 'GET', b) => fetch('/public/courier/' + u, { method: m, headers: { 'Content-Type': 'application/json', 'x-token': T },
+  body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
+
+async function load() {
+  const d = await api('me');
+  if (d.error) return document.getElementById('list').innerHTML = `<p class="m">${esc(d.error)} — demandez un nouveau lien.</p>`;
+  document.getElementById('n').textContent = '🚚 ' + d.name + ' — ' + d.orders.length + ' commande(s)';
+  document.getElementById('list').innerHTML = d.orders.map(o => `<div class="o">
+    <h3>#${o.id} ${esc(o.name)} <span class="st">${esc(o.status)}</span></h3>
+    <div>${esc(o.address)}, ${esc(o.city)}</div><div>${esc(o.product_name)} × ${o.qty}</div>
+    <div style="font-size:20px;margin-top:6px">À encaisser : <b>${o.amount}</b></div>
+    <div class="a"><a href="tel:${esc(o.phone)}">📞 Appeler</a>
+    <a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(o.address + ' ' + o.city)}">🧭 Itinéraire GPS</a>
+    <button onclick="act(${o.id},'en_route')">🛵 En route</button><button class="ret" onclick="act(${o.id},'retour')">↩️ Retour</button>
+    <button class="ok" onclick="act(${o.id},'livre')">✅ Marquer comme livré</button></div></div>`).join('') || '<p class="m">Aucune commande assignée 👍</p>';
+}
+async function act(id, a) {
+  if (a !== 'en_route' && !confirm(a === 'livre' ? 'Confirmer la livraison et l\'encaissement ?' : 'Confirmer le retour ?')) return;
+  await api(`orders/${id}/${a}`, 'POST'); load();
+}
+function sendPos() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(p => {
+    api('position', 'POST', { lat: p.coords.latitude, lng: p.coords.longitude });
+    document.getElementById('gps').textContent = 'GPS actif · ' + new Date().toLocaleTimeString();
+  }, () => document.getElementById('gps').textContent = 'GPS refusé — activez la localisation', { enableHighAccuracy: true });
+}
+load(); sendPos(); setInterval(sendPos, 30000); setInterval(load, 60000);
+</script>
+</body></html>

@@ -1,0 +1,293 @@
+// Mireb COD — interface d'administration (vanilla JS)
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+let META = { statuses: [], currency: '$' };
+const LABEL = { nouveau: 'Nouveau', en_confirmation: 'En confirmation', confirme: 'Confirmé', en_preparation: 'En préparation',
+  expedie: 'Expédié', en_livraison: 'En livraison', livre: 'Livré', paye: 'Payé', annule: 'Annulé', retourne: 'Retourné' };
+const SEG = { nouveau: '🆕 Nouveau', actif: '✅ Actif', fidele: '💎 Fidèle', vip: '⭐ VIP', risque: '⚠️ Risque' };
+const money = n => `${(+n || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${META.currency}`;
+const badge = s => `<span class="badge s-${s}">${LABEL[s] || s}</span>`;
+
+async function api(url, method = 'GET', body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 && url.startsWith('/api')) { showLogin(); throw new Error('Non connecté'); }
+  const d = r.headers.get('content-type')?.includes('json') ? await r.json() : await r.text();
+  if (!r.ok) { toast(d.error || 'Erreur'); throw new Error(d.error); }
+  return d;
+}
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2500); }
+function modal(html) { $('#mbox').innerHTML = html; $('#modal').classList.remove('hidden'); }
+function closeModal() { $('#modal').classList.add('hidden'); }
+const formData = f => Object.fromEntries(new FormData(f));
+
+// ---------- Auth ----------
+function showLogin() { $('#login').classList.remove('hidden'); $('#app').classList.add('hidden'); }
+async function login(e) {
+  e.preventDefault();
+  try { await api('/auth/login', 'POST', formData(e.target)); boot(); } catch (err) { $('#lerr').textContent = err.message; }
+}
+async function logout() { await api('/auth/logout', 'POST'); showLogin(); }
+
+// ---------- Navigation ----------
+const PAGES = {
+  dashboard: ['📊 Tableau de bord', dashboard], orders: ['📦 Commandes COD', orders], crm: ['👥 CRM Clients', crm],
+  agents: ['☎️ Agents', agents], couriers: ['🚚 Livreurs', couriers], stock: ['🏷️ Stock', stock], channels: ['📣 Canaux de vente', channels],
+  stats: ['📈 Statistiques', stats], kanban: ['🗂️ Pipeline Kanban', kanban], automations: ['⚡ Automatisations', automations],
+  tracking: ['📍 Tracking GPS', tracking], sync: ['🔄 Synchronisation', sync], settings: ['⚙️ Paramètres', settings],
+};
+function go(p) { location.hash = p; }
+async function route() {
+  const p = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'dashboard';
+  $('#nav').innerHTML = Object.entries(PAGES).map(([k, [l]]) => `<a class="${k === p ? 'on' : ''}" onclick="go('${k}')">${l}</a>`).join('');
+  $('#title').textContent = PAGES[p][0]; document.body.classList.remove('open');
+  $('#view').innerHTML = '<p class="mut">Chargement…</p>';
+  try { await PAGES[p][1]($('#view')); } catch (e) { $('#view').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+window.onhashchange = route;
+async function boot() {
+  try { META = await api('/api/meta'); } catch { return; }
+  $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); route();
+}
+
+// ---------- Tableau de bord ----------
+async function dashboard(v) {
+  const d = await api('/api/dashboard');
+  const c = d.connectors;
+  v.innerHTML = `<div class="grid">
+    <div class="card kpi"><b>${d.today.n}</b><span>Commandes aujourd'hui</span></div>
+    <div class="card kpi"><b>${d.counts.nouveau}</b><span>À confirmer</span></div>
+    <div class="card kpi"><b>${d.counts.en_livraison + d.counts.expedie}</b><span>En cours de livraison</span></div>
+    <div class="card kpi"><b>${d.counts.livre}</b><span>Livrées (non payées)</span></div></div>
+  <div class="card"><h3>Statuts</h3><div class="row">${Object.entries(d.counts).map(([s, n]) => `${badge(s)} <b>${n}</b>`).join(' ')}</div></div>
+  <div class="card"><h3>🔧 Diagnostic système</h3><table>
+    ${Object.entries(c).map(([k, ok]) => `<tr><td>${k}</td><td>${ok ? '✅ Configuré' : '⚪ Non configuré (.env)'}</td></tr>`).join('')}
+    <tr><td>Commandes non synchronisées</td><td>${d.unsynced}</td></tr></table></div>
+  ${d.lowStock.length ? `<div class="card"><h3>⚠️ Stock faible</h3>${d.lowStock.map(p => `${esc(p.name)} : <b>${p.stock}</b>`).join('<br>')}</div>` : ''}`;
+}
+
+// ---------- Commandes ----------
+let lists = {};
+async function loadLists() {
+  const [a, c, ch, p] = await Promise.all(['/api/agents', '/api/couriers', '/api/channels', '/api/products'].map(u => api(u)));
+  lists = { agents: a, couriers: c, channels: ch, products: p };
+}
+const opts = (arr, sel, lab) => `<option value="">—</option>` + arr.map(x => `<option value="${x.id}" ${x.id == sel ? 'selected' : ''}>${esc(lab(x))}</option>`).join('');
+async function orders(v, filter = {}) {
+  await loadLists();
+  const qs = new URLSearchParams(filter).toString();
+  const rows = await api('/api/orders?' + qs);
+  v.innerHTML = `<div class="card row">
+    <input id="q" placeholder="Rechercher nom, téléphone, n°" value="${esc(filter.q || '')}">
+    <select id="fs"><option value="">Tous les statuts</option>${META.statuses.map(s => `<option value="${s}" ${s === filter.status ? 'selected' : ''}>${LABEL[s]}</option>`).join('')}</select>
+    <button onclick="orders($('#view'),{q:$('#q').value,status:$('#fs').value})">Filtrer</button>
+    <button onclick="newOrder()">+ Commande</button></div>
+  <div class="card tw"><table><tr><th>#</th><th>Client</th><th>Produit</th><th>Montant</th><th>Statut</th><th>Agent</th><th>Livreur</th><th></th></tr>
+  ${rows.map(o => `<tr><td>${o.id}</td><td>${o.blacklisted ? '🚫 ' : ''}<b>${esc(o.name)}</b><br><a href="tel:${esc(o.phone)}">${esc(o.phone)}</a><br><span class="mut">${esc(o.city)}</span></td>
+    <td>${esc(o.product_name)} × ${o.qty}</td><td>${money(o.amount)}</td>
+    <td><select onchange="setStatus(${o.id},this.value)">${META.statuses.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${LABEL[s]}</option>`).join('')}</select></td>
+    <td><select onchange="assign(${o.id},{agent_id:this.value})">${opts(lists.agents, o.agent_id, a => a.first_name + ' ' + a.last_name)}</select></td>
+    <td><select onchange="assign(${o.id},{courier_id:this.value})">${opts(lists.couriers, o.courier_id, c => c.name)}</select></td>
+    <td><button class="sm" onclick="orderDetail(${o.id})">👁</button></td></tr>`).join('') || '<tr><td colspan=8 class="mut">Aucune commande</td></tr>'}
+  </table></div>`;
+}
+async function setStatus(id, status) { await api(`/api/orders/${id}/status`, 'PUT', { status }); toast('Statut mis à jour'); }
+async function assign(id, body) { await api(`/api/orders/${id}/assign`, 'PUT', body); toast('Assigné'); }
+async function orderDetail(id) {
+  const o = await api('/api/orders/' + id);
+  modal(`<h3>Commande #${o.id} ${badge(o.status)}</h3>
+    <p><b>${esc(o.name)}</b> · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a> · <a target="_blank" href="https://wa.me/${esc(o.phone).replace(/\D/g, '')}">WhatsApp</a><br>
+    ${esc(o.address)}, ${esc(o.city)}<br>${esc(o.product_name)} × ${o.qty} — <b>${money(o.amount)}</b></p>
+    <h4>Historique</h4>${o.history.map(h => `<div>${esc(h.created_at)} — ${badge(h.status)} ${esc(h.note)}</div>`).join('')}
+    <form class="f" style="margin-top:12px" onsubmit="event.preventDefault();api('/api/orders/${id}/note','POST',formData(this)).then(()=>orderDetail(${id}))">
+    <textarea name="note" placeholder="Ajouter une note" required></textarea><button>Ajouter la note</button></form>`);
+}
+async function newOrder() {
+  await loadLists();
+  modal(`<h3>Nouvelle commande</h3><form class="f" onsubmit="event.preventDefault();api('/api/orders','POST',formData(this)).then(()=>{closeModal();route()})">
+    <input name="name" placeholder="Nom" required><input name="phone" placeholder="Téléphone" required>
+    <input name="address" placeholder="Adresse" required><input name="city" placeholder="Ville">
+    <select name="product_id">${opts(lists.products, null, p => `${p.name} (${money(p.price)})`)}</select>
+    <input name="qty" type="number" value="1" min="1"><select name="channel_id">${opts(lists.channels, null, c => c.name)}</select>
+    <button>Créer</button></form>`);
+}
+
+// ---------- Kanban ----------
+async function kanban(v) {
+  const rows = await api('/api/orders');
+  v.innerHTML = `<div class="kanban">${META.statuses.map(s => `<div class="col" ondragover="event.preventDefault()" ondrop="drop(event,'${s}')">
+    <h4>${LABEL[s]} (${rows.filter(o => o.status === s).length})</h4>
+    ${rows.filter(o => o.status === s).map(o => `<div class="kc" draggable="true" ondragstart="event.dataTransfer.setData('id',${o.id})" onclick="orderDetail(${o.id})">
+      <b>#${o.id} ${esc(o.name)}</b><br><span class="mut">${esc(o.product_name)} · ${money(o.amount)}</span></div>`).join('')}</div>`).join('')}</div>`;
+}
+async function drop(e, s) { await setStatus(e.dataTransfer.getData('id'), s); kanban($('#view')); }
+
+// ---------- CRM ----------
+async function crm(v) {
+  const rows = await api('/api/customers');
+  v.innerHTML = `<div class="card tw"><table><tr><th>Client</th><th>Segment</th><th>Score</th><th>Commandes</th><th>Dépensé</th><th>Tags</th><th></th></tr>
+  ${rows.map(c => `<tr><td>${c.blacklisted ? '🚫 ' : ''}<b>${esc(c.name)}</b><br>${esc(c.phone)} · ${esc(c.city)}</td><td>${SEG[c.segment]}</td>
+    <td>${c.score == null ? '—' : '★'.repeat(Math.round(c.score)) + ` ${c.score}`}</td><td>${c.orders} (${c.delivered} livrées)</td><td>${money(c.spent)}</td>
+    <td>${esc(c.tags)}</td><td><button class="sm" onclick="customer(${c.id})">👁</button>
+    <button class="sm gray" onclick="api('/api/customers/${c.id}','PUT',{blacklisted:${c.blacklisted ? 0 : 1}}).then(route)">${c.blacklisted ? 'Retirer' : '🚫 Blacklist'}</button></td></tr>`).join('') || '<tr><td colspan=7 class="mut">Aucun client</td></tr>'}</table></div>`;
+}
+async function customer(id) {
+  const c = await api('/api/customers/' + id);
+  modal(`<h3>${esc(c.name)} ${SEG[c.segment]}</h3><p>${esc(c.phone)} · ${esc(c.address)} ${esc(c.city)}</p>
+  <form class="f" onsubmit="event.preventDefault();api('/api/customers/${id}','PUT',formData(this)).then(()=>{toast('Enregistré');closeModal();route()})">
+  <input name="tags" placeholder="Tags (revendeur, grossiste…)" value="${esc(c.tags)}"><textarea name="notes" placeholder="Notes">${esc(c.notes)}</textarea><button>Enregistrer</button></form>
+  <h4>Historique</h4>${c.orders.map(o => `<div>#${o.id} ${esc(o.created_at)} · ${esc(o.product_name)} · ${money(o.amount)} ${badge(o.status)}</div>`).join('')}`);
+}
+
+// ---------- Agents ----------
+async function agents(v) {
+  const rows = await api('/api/agents-full');
+  v.innerHTML = `<div class="card"><button onclick="agentForm()">+ Ajouter un agent</button></div>
+  <div class="card tw"><table><tr><th>Agent</th><th>Contact</th><th>Taux</th><th>Commandes</th><th>Dû</th><th></th></tr>
+  ${rows.map(a => `<tr><td><b>${esc(a.first_name)} ${esc(a.last_name)}</b></td><td>${esc(a.phone)}<br>${esc(a.email)}</td><td>${a.commission_rate}%</td>
+    <td>${a.orders} (${a.delivered} livrées)</td><td><b>${money(a.due)}</b></td>
+    <td><button class="sm" onclick="payAgent(${a.id})">💰 Payer</button> <button class="sm gray" onclick='agentForm(${JSON.stringify(a).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
+}
+function agentForm(a = {}) {
+  modal(`<h3>${a.id ? 'Modifier' : 'Ajouter'} un agent</h3><form class="f" onsubmit="event.preventDefault();api('/api/agents${a.id ? '/' + a.id : ''}','${a.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
+  <input name="first_name" placeholder="Prénom" value="${esc(a.first_name)}" required><input name="last_name" placeholder="Nom" value="${esc(a.last_name)}">
+  <input name="phone" placeholder="Téléphone" value="${esc(a.phone)}"><input name="email" placeholder="Email" value="${esc(a.email)}">
+  <label>Taux de commission (%)<input name="commission_rate" type="number" step="0.1" value="${a.commission_rate ?? 5}"></label><button>Enregistrer</button></form>`);
+}
+async function payAgent(id) {
+  const rows = await api(`/api/agents/${id}/commissions`);
+  if (!rows.length) return toast('Aucune commission en attente');
+  modal(`<h3>Payer les commissions</h3><form onsubmit="event.preventDefault();api('/api/agents/${id}/pay','POST',{ids:[...this.querySelectorAll('input:checked')].map(i=>i.value)}).then(()=>{toast('Paiement enregistré');closeModal();route()})">
+  <table>${rows.map(c => `<tr><td><input type="checkbox" value="${c.id}" checked style="width:auto"></td><td>Commande #${c.order_id} — ${esc(c.name)}</td><td>${money(c.amount)}</td></tr>`).join('')}</table>
+  <p>Total : <b>${money(rows.reduce((s, c) => s + c.amount, 0))}</b></p><button>✅ Confirmer le paiement</button></form>`);
+}
+
+// ---------- Livreurs ----------
+async function couriers(v) {
+  const rows = await api('/api/couriers-full');
+  v.innerHTML = `<div class="card"><button onclick="courierForm()">+ Ajouter un livreur</button></div>
+  <div class="card tw"><table><tr><th>Livreur</th><th>Tarif/colis</th><th>Zones</th><th>En cours</th><th>Solde dû</th><th></th></tr>
+  ${rows.map(c => `<tr><td><b>${esc(c.name)}</b><br>${esc(c.company)} · ${esc(c.phone)}</td><td>${money(c.fee_per_parcel)}</td><td>${esc(c.zones)}</td>
+    <td>${c.active}</td><td><b>${money(c.balance)}</b></td>
+    <td><button class="sm" onclick="courierPay(${c.id})">💳 Paiement</button> <button class="sm gray" onclick='courierForm(${JSON.stringify(c).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
+}
+function courierForm(c = {}) {
+  modal(`<h3>${c.id ? 'Modifier' : 'Ajouter'} un livreur</h3><form class="f" onsubmit="event.preventDefault();api('/api/couriers${c.id ? '/' + c.id : ''}','${c.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
+  <input name="name" placeholder="Nom" value="${esc(c.name)}" required><input name="company" placeholder="Société" value="${esc(c.company)}">
+  <input name="phone" placeholder="Téléphone" value="${esc(c.phone)}"><label>Tarif par colis<input name="fee_per_parcel" type="number" step="0.01" value="${c.fee_per_parcel ?? 0}"></label>
+  <input name="zones" placeholder="Zones : Kinshasa, Gombe, Lemba" value="${esc(c.zones)}"><button>Enregistrer</button></form>`);
+}
+function courierPay(id) {
+  modal(`<h3>Enregistrer un versement</h3><form class="f" onsubmit="event.preventDefault();api('/api/couriers/${id}/payment','POST',formData(this)).then(r=>{toast('Nouveau solde : '+money(r.balance));closeModal();route()})">
+  <input name="amount" type="number" step="0.01" placeholder="Montant reçu" required><button>Valider</button></form>`);
+}
+
+// ---------- Tracking GPS ----------
+async function tracking(v) {
+  const rows = await api('/api/couriers-full');
+  v.innerHTML = `<div class="card tw"><table><tr><th>Livreur</th><th>Auto-assign</th><th>Statut</th><th>Dernière position</th><th>En cours</th><th>App livreur</th></tr>
+  ${rows.map(c => `<tr><td><b>${esc(c.name)}</b><br><span class="mut">${esc(c.zones)}</span></td>
+    <td><input type="checkbox" style="width:auto" ${c.auto_assign ? 'checked' : ''} onchange="api('/api/couriers/${c.id}','PUT',{auto_assign:this.checked?1:0}).then(()=>toast('Enregistré'))"></td>
+    <td>${c.online ? '🟢 En ligne' : '⚪ Hors ligne'}</td>
+    <td>${c.last_lat ? `<a target="_blank" href="https://maps.google.com/?q=${c.last_lat},${c.last_lng}">📍 Voir</a><br><span class="mut">${esc(c.last_seen)}</span>` : '—'}</td>
+    <td>${c.active}</td><td><button class="sm" onclick="genLink(${c.id},'${esc(c.phone)}')">🔑 Générer</button></td></tr>`).join('')}</table></div>
+  <p class="mut">Avec l'auto-assignation, chaque commande « Confirmé » part au livreur le moins chargé de la ville du client.</p>`;
+}
+async function genLink(id, phone) {
+  const { link } = await api(`/api/couriers/${id}/token`, 'POST');
+  modal(`<h3>Lien app livreur</h3><p><code>${esc(link)}</code></p><div class="row">
+  <button onclick="navigator.clipboard.writeText('${link}');toast('Copié')">📋 Copier</button>
+  <a class="btn" target="_blank" href="https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent('Votre app livreur Mireb : ' + link)}">📲 Envoyer par WhatsApp</a></div>`);
+}
+
+// ---------- Stock ----------
+async function stock(v) {
+  const [p, m] = await Promise.all([api('/api/products'), api('/api/stock-moves')]);
+  v.innerHTML = `<div class="card"><h3>Produits</h3><form class="row" onsubmit="event.preventDefault();api('/api/products','POST',formData(this)).then(route)">
+    <input name="name" placeholder="Nom du produit" required><input name="price" type="number" step="0.01" placeholder="Prix"><input name="stock" type="number" placeholder="Stock initial"><button>+ Produit</button></form>
+    <div class="tw"><table><tr><th>ID</th><th>Produit</th><th>Prix</th><th>Stock</th><th>WooCommerce</th></tr>
+    ${p.map(x => `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${money(x.price)}</td><td><b>${x.stock}</b></td><td>${x.wc_id || '—'}</td></tr>`).join('')}</table></div></div>
+  <div class="card"><h3>Mouvement de stock</h3><form class="row" onsubmit="event.preventDefault();api('/api/stock-moves','POST',formData(this)).then(route)">
+    <select name="product_id">${p.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
+    <select name="type"><option value="entree">Entrée</option><option value="sortie">Sortie</option></select>
+    <input name="qty" type="number" placeholder="Quantité" required><input name="note" placeholder="Note"><button>Enregistrer</button></form>
+    <div class="tw"><table>${m.map(x => `<tr><td>${esc(x.created_at)}</td><td>${esc(x.name)}</td><td>${x.qty > 0 ? '+' : ''}${x.qty}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div></div>`;
+}
+
+// ---------- Canaux ----------
+async function channels(v) {
+  const rows = await api('/api/channels');
+  v.innerHTML = `<div class="card"><form class="row" onsubmit="event.preventDefault();api('/api/channels','POST',formData(this)).then(route)">
+    <input name="name" placeholder="Ex : Facebook Ads, TikTok" required><button>+ Canal</button></form></div>
+  <div class="card tw"><table><tr><th>ID</th><th>Canal</th><th>Lien à mettre dans la pub</th></tr>
+  ${rows.map(c => `<tr><td>${c.id}</td><td>${esc(c.name)}</td><td><code>${location.origin}/commande.html?product_id=ID&amp;canal=${c.id}</code><br>
+    <span class="mut">ou sur WordPress : https://votre-site.com/produit/?mireb_canal=${c.id}</span></td></tr>`).join('')}</table></div>`;
+}
+
+// ---------- Statistiques ----------
+async function stats(v, days = 30) {
+  const s = await api('/api/stats?days=' + days); const t = s.totals;
+  const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+  const max = Math.max(1, ...s.daily.map(d => d.n));
+  v.innerHTML = `<div class="card row"><select onchange="stats($('#view'),this.value)">${[7, 30, 90, 365].map(d => `<option ${d == days ? 'selected' : ''} value="${d}">${d} jours</option>`).join('')}</select>
+    <a class="btn" href="/api/export.csv">⬇️ Export CSV</a></div>
+  <div class="grid"><div class="card kpi"><b>${t.n}</b><span>Commandes</span></div><div class="card kpi"><b>${pct(t.confirme, t.n)}</b><span>Taux de confirmation</span></div>
+    <div class="card kpi"><b>${pct(t.livre, t.confirme)}</b><span>Taux de livraison</span></div><div class="card kpi"><b>${money(t.ca)}</b><span>Chiffre d'affaires</span></div></div>
+  <div class="card"><h3>Commandes par jour</h3>${s.daily.map(d => `<div class="row" style="flex-wrap:nowrap"><span style="flex:0 0 90px">${d.d}</span>
+    <div style="flex:1"><div class="bar" style="width:${d.n / max * 100}%"></div></div><span style="flex:0 0 40px">${d.n}</span></div>`).join('') || '<p class="mut">Pas de données</p>'}</div>
+  <div class="card tw"><h3>Par canal</h3><table>${s.byChannel.map(c => `<tr><td>${esc(c.name)}</td><td>${c.n} commandes</td><td>${pct(c.livre, c.n)} livrées</td></tr>`).join('')}</table></div>
+  <div class="card tw"><h3>Par agent</h3><table>${s.byAgent.map(c => `<tr><td>${esc(c.name)}</td><td>${c.n} commandes</td><td>${pct(c.livre, c.n)} livrées</td></tr>`).join('')}</table></div>`;
+}
+
+// ---------- Automatisations ----------
+async function automations(v) {
+  const [rows, log] = await Promise.all([api('/api/automations'), api('/api/automation-log')]);
+  v.innerHTML = `<div class="card"><button onclick="autoForm()">+ Nouvelle automatisation</button>
+    <p class="mut">Variables : {id} {nom} {telephone} {adresse} {ville} {produit} {montant} {devise} {statut}</p></div>
+  <div class="card tw"><table><tr><th>Actif</th><th>Nom</th><th>Déclencheur</th><th>Canal</th><th></th></tr>
+  ${rows.map(a => `<tr><td><input type="checkbox" style="width:auto" ${a.active ? 'checked' : ''} onchange="api('/api/automations/${a.id}','PUT',{active:this.checked?1:0}).then(()=>toast('Enregistré'))"></td>
+    <td><b>${esc(a.name)}</b><br><span class="mut">${esc(a.template)}</span></td>
+    <td>${LABEL[a.trigger.replace('status:', '')]}${a.delay_hours ? ` depuis ${a.delay_hours}h` : ''}</td><td>${a.channel} → ${a.target}</td>
+    <td><button class="sm gray" onclick='autoForm(${JSON.stringify(a).replace(/'/g, "&#39;")})'>✏️</button>
+    <button class="sm gray" onclick="api('/api/automations/${a.id}','DELETE').then(route)">🗑</button></td></tr>`).join('')}</table></div>
+  <div class="card tw"><h3>Journal</h3><table>${log.map(l => `<tr><td>${esc(l.created_at)}</td><td>${esc(l.name)}</td><td>#${l.order_id}</td><td>${l.ok ? '✅' : '❌'} ${esc(l.info)}</td></tr>`).join('') || '<tr><td class="mut">Vide</td></tr>'}</table></div>`;
+}
+function autoForm(a = {}) {
+  modal(`<h3>Automatisation</h3><form class="f" onsubmit="event.preventDefault();api('/api/automations${a.id ? '/' + a.id : ''}','${a.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
+  <input name="name" placeholder="Nom" value="${esc(a.name)}" required>
+  <label>Quand la commande passe au statut<select name="trigger">${META.statuses.map(s => `<option value="status:${s}" ${a.trigger === 'status:' + s ? 'selected' : ''}>${LABEL[s]}</option>`).join('')}</select></label>
+  <label>Délai (heures, 0 = immédiat)<input name="delay_hours" type="number" value="${a.delay_hours ?? 0}"></label>
+  <select name="channel">${['whatsapp', 'sms', 'email'].map(c => `<option ${a.channel === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+  <select name="target"><option value="client">Client</option><option value="admin" ${a.target === 'admin' ? 'selected' : ''}>Admin</option></select>
+  <textarea name="template" rows="4" required>${esc(a.template)}</textarea><input type="hidden" name="active" value="${a.active ?? 1}"><button>Enregistrer</button></form>`);
+}
+
+// ---------- Synchronisation ----------
+async function sync(v) {
+  const d = await api('/api/dashboard');
+  v.innerHTML = `<div class="card"><p>WooCommerce : ${d.connectors.woocommerce ? '✅ connecté' : '⚪ non configuré — renseignez WC_URL, WC_KEY, WC_SECRET dans .env'}</p>
+  <p>Commandes non synchronisées : <b>${d.unsynced}</b></p><div class="row">
+  <button onclick="runSync('products')">📥 Importer les produits</button><button onclick="runSync('pull')">📥 Récupérer les commandes</button>
+  <button onclick="runSync('push')">📤 Rattraper les non synchronisées</button></div>
+  <p class="mut">Synchronisation automatique toutes les 5 minutes. Webhook temps réel : <code>${location.origin}/public/webhooks/woocommerce</code> (sujet « Commande créée »).</p></div>`;
+}
+async function runSync(k) { const r = await api('/api/sync/' + k, 'POST'); toast(JSON.stringify(r)); route(); }
+
+// ---------- Paramètres ----------
+async function settings(v) {
+  const s = await api('/api/settings');
+  v.innerHTML = `<div class="card"><h3>Formulaire COD — Pages produit</h3><form class="f" onsubmit="event.preventDefault();api('/api/settings','PUT',formData(this)).then(()=>toast('Enregistré'))">
+  <label>Nom de la boutique<input name="shop_name" value="${esc(s.shop_name)}"></label>
+  <label>Couleur du bouton<input name="form_color" type="color" value="${esc(s.form_color || '#e8342a')}"></label>
+  <label>Texte du bouton<input name="form_button" value="${esc(s.form_button)}" placeholder="Commander — Paiement à la livraison"></label>
+  <label>Sous-titre<input name="form_subtitle" value="${esc(s.form_subtitle)}"></label>
+  <label>Badge urgence<input name="form_badge" value="${esc(s.form_badge)}" placeholder="Offre limitée"></label>
+  <label>Texte de garantie<input name="form_guarantee" value="${esc(s.form_guarantee)}"></label><button>Enregistrer</button></form></div>
+  <div class="card"><h3>Intégrer le formulaire</h3><p>Page hébergée : <code>${location.origin}/commande.html?product_id=1</code></p>
+  <p>Sur n'importe quel site (WordPress, landing page) :</p>
+  <code>&lt;div data-mireb-form data-product="1" data-canal="1"&gt;&lt;/div&gt;&lt;script src="${location.origin}/widget.js"&gt;&lt;/script&gt;</code></div>
+  <div class="card"><h3>Mot de passe admin</h3><form class="row" onsubmit="event.preventDefault();api('/auth/password','POST',formData(this)).then(()=>toast('Modifié'))">
+  <input name="password" type="password" placeholder="Nouveau mot de passe" required minlength="8"><button>Changer</button></form></div>`;
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+boot();

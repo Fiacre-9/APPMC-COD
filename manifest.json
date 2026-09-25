@@ -1,0 +1,2 @@
+{ "name": "Mireb Livreur", "short_name": "Livreur", "start_url": "./", "display": "standalone", "theme_color": "#1d2330",
+  "background_color": "#ffffff", "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
