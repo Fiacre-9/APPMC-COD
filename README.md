@@ -22,9 +22,11 @@ Application autonome de gestion des commandes **Cash-on-Delivery** (version Node
 
 ## Boutique multivendeur
 - **Inscription vendeur** : `https://votre-app/vendeur/#inscription` (connexion : `/vendeur/`). Chaque vendeur a un accès unique et ne voit que ses produits et ses commandes.
-- **Produits** : photo, prix, ancien prix barré, stock, description, visible/masqué.
+- **Produits** : jusqu'à 6 photos (galerie), catégorie, prix, ancien prix barré, stock, courte description et description complète en **Markdown** (barre d'outils + aperçu), visible/masqué.
 - **Page produit** `https://votre-app/p/<nom-du-produit>` : fiche + formulaire de commande COD déjà lié au produit (ajoutez `?canal=ID` pour suivre une pub).
-- **Boutique du vendeur** : `/boutique/<vendeur>` · **Marketplace** (tous les vendeurs) : `/boutique`.
+- **Boutique du vendeur** : `/boutique/<vendeur>` · **Marketplace** (tous les vendeurs) : `/boutique` — design du thème Mireb COD (en-tête avec recherche, catégories à icônes, nouveautés, promotions, grille 2/4 colonnes, menu du bas mobile). Recherche `?q=`, catégorie `?cat=`.
+- **Suivi de commande** : `/suivi` (numéro de commande + téléphone).
+- Markdown pris en charge : `## titre`, `**gras**`, `*italique*`, listes `-` / `1.` / `✅`, `> citation`, `---`, `[lien](https://…)`, `![image](https://…)`. Le HTML saisi n'est jamais interprété.
 - Les commandes reçues via la page d'un vendeur lui sont attribuées ; l'admin les voit toutes (colonne 🏪) et peut suspendre un vendeur (ses pages et son formulaire sont alors désactivés).
 - Les photos sont stockées dans `DATA_DIR/uploads` (hors du dossier de l'app, conservées aux redéploiements).
 

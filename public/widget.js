@@ -19,7 +19,7 @@
         d.product_id = pid; d.canal = canal; b.disabled = true;
         fetch(base + '/public/lead', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
           .then(function (r) { return r.json(); }).then(function (r) {
-            if (r.ok) f.innerHTML = '<h3 style="color:' + col + '">✅ Commande reçue (n°' + r.id + ')</h3><p>' + esc(r.message) + '</p>';
+            if (r.ok) f.innerHTML = '<h3 style="color:' + col + '">✅ Commande reçue (n°' + r.id + ')</h3><p>' + esc(r.message) + '</p><p><a style="color:' + col + ';font-weight:bold" href="' + base + '/suivi?n=' + r.id + '">🚚 Suivre ma commande</a></p>';
             else { f.querySelector('.mireb-msg').textContent = r.error; b.disabled = false; }
           });
       };
