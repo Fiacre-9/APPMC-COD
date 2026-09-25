@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { db, STATUSES, getSetting, setSetting } = require('../db');
 const S = require('../services');
 const conn = require('../connectors');
+const push = require('../push');
 
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
@@ -53,7 +54,11 @@ router.put('/orders/:id/status', wrap((req, res) => {
 router.put('/orders/:id/assign', wrap((req, res) => {
   const { agent_id, courier_id } = req.body;
   if (agent_id !== undefined) db.prepare('UPDATE orders SET agent_id=? WHERE id=?').run(agent_id || null, req.params.id);
-  if (courier_id !== undefined) db.prepare('UPDATE orders SET courier_id=? WHERE id=?').run(courier_id || null, req.params.id);
+  if (courier_id !== undefined) {
+    const before = db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id);
+    db.prepare('UPDATE orders SET courier_id=? WHERE id=?').run(courier_id || null, req.params.id);
+    if (courier_id && before && +courier_id !== before.courier_id) S.notifyCourier(+courier_id, before);
+  }
   res.json({ ok: true });
 }));
 router.post('/orders/:id/note', wrap((req, res) => {
@@ -159,9 +164,14 @@ router.post('/sync/pull', wrap(async (req, res) => res.json({ imported: await S.
 router.post('/sync/push', wrap(async (req, res) => res.json(await S.pushUnsynced())));
 
 // ---------- Paramètres ----------
-const SETTINGS = ['form_color', 'form_button', 'form_subtitle', 'form_badge', 'form_guarantee', 'shop_name'];
+const SETTINGS = ['form_color', 'form_button', 'form_subtitle', 'form_badge', 'form_guarantee', 'shop_name', 'android_apps'];
 router.get('/settings', (req, res) => res.json(Object.fromEntries(SETTINGS.map(k => [k, getSetting(k)]))));
-router.put('/settings', (req, res) => { SETTINGS.forEach(k => req.body[k] !== undefined && setSetting(k, req.body[k])); res.json({ ok: true }); });
+router.put('/settings', wrap((req, res) => {
+  if (req.body.android_apps !== undefined) require('./pwa').parseAndroidApps(req.body.android_apps); // refuse une ligne mal formée
+  SETTINGS.forEach(k => req.body[k] !== undefined && setSetting(k, req.body[k])); res.json({ ok: true });
+}));
 router.get('/meta', (req, res) => res.json({ statuses: STATUSES, currency: process.env.CURRENCY || '$', connectors: conn.status() }));
+
+router.post('/push/subscribe', wrap((req, res) => { push.subscribe(req.body.subscription, 'admin', null); res.json({ ok: true }); }));
 
 module.exports = router;

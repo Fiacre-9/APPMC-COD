@@ -1,6 +1,6 @@
 // Service worker Mireb : applications installables + consultation hors connexion.
 // Les données (API, commandes, connexions) passent toujours par le réseau et ne sont jamais mises en cache.
-const VERSION = 'mireb-v3';
+const VERSION = 'mireb-v4';
 const STATIC = `${VERSION}-static`, PAGES = `${VERSION}-pages`, IMAGES = `${VERSION}-images`;
 const PRECACHE = ['/offline.html', '/style.css', '/pwa.js', '/widget.js', '/markdown.js', '/icon.svg',
   '/icons/boutique-192.png', '/icons/vendeur-192.png', '/icons/livreur-192.png', '/icons/admin-192.png'];
@@ -50,4 +50,24 @@ self.addEventListener('fetch', e => {
       return hit || net;
     })));
   }
+});
+
+// ---------- Notifications push ----------
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'Mireb', body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Mireb', {
+    body: d.body || '', icon: d.icon || '/icons/boutique-192.png', badge: '/icons/boutique-192.png',
+    tag: d.tag, renotify: !!d.tag, data: { url: d.url || '/' }, vibrate: [120, 60, 120],
+  }));
+});
+// Un clic ouvre la bonne page : fenêtre de l'app déjà ouverte si possible
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || '/', location.origin).href;
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const same = list.find(c => new URL(c.url).pathname === new URL(url).pathname);
+    if (same) return same.focus().then(c => c.navigate ? c.navigate(url) : c);
+    return clients.openWindow(url);
+  }));
 });

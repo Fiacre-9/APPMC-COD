@@ -19,8 +19,14 @@
         d.product_id = pid; d.canal = canal; b.disabled = true;
         fetch(base + '/public/lead', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
           .then(function (r) { return r.json(); }).then(function (r) {
-            if (r.ok) f.innerHTML = '<h3 style="color:' + col + '">✅ Commande reçue (n°' + r.id + ')</h3><p>' + esc(r.message) + '</p><p><a style="color:' + col + ';font-weight:bold" href="' + base + '/suivi?n=' + r.id + '">🚚 Suivre ma commande</a></p>';
-            else { f.querySelector('.mireb-msg').textContent = r.error; b.disabled = false; }
+            if (!r.ok) { f.querySelector('.mireb-msg').textContent = r.error; b.disabled = false; return; }
+            f.innerHTML = '<h3 style="color:' + col + '">✅ Commande reçue (n°' + r.id + ')</h3><p>' + esc(r.message) + '</p><p><a style="color:' + col + ';font-weight:bold" href="' + base + '/suivi?n=' + r.id + '">🚚 Suivre ma commande</a></p>';
+            // Sur notre site (boutique, page commande) : proposer les notifications de suivi du colis
+            if (r.track && window.MirebPush && base === location.origin && (MirebPush.supported() || MirebPush.needsInstall())) {
+              var pb = document.createElement('button'); pb.type = 'button'; pb.textContent = '🔔 Me prévenir quand mon colis arrive';
+              pb.style.cssText = 'background:#1A56DB;color:#fff;border:0;padding:12px 14px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;width:100%';
+              f.appendChild(pb); MirebPush.button(pb, '/public/push/subscribe', { order_id: r.id, token: r.track });
+            }
           });
       };
     });

@@ -33,7 +33,7 @@
     document.body.appendChild(bar);
   }
 
-  function guide() {
+  function guide(why) {
     var share = '<svg width="18" height="18" viewBox="0 0 24 24" style="vertical-align:-3px"><path d="M12 3v12M7 8l5-5 5 5" fill="none" stroke="#1A56DB" stroke-width="2"/><path d="M5 11v9h14v-9" fill="none" stroke="#1A56DB" stroke-width="2"/></svg>';
     var steps = ios
       ? ['Touchez le bouton <b>Partager</b> ' + share + ' en bas de Safari (ou en haut sur iPad).', 'Faites défiler et choisissez <b>« Sur l\'écran d\'accueil »</b>.', 'Touchez <b>Ajouter</b> : l\'icône apparaît sur votre écran.']
@@ -43,6 +43,7 @@
       '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">📲 Installer ' + app + '</b>' +
       '<button data-x style="background:none;border:0;font-size:22px;cursor:pointer;color:#64748B">✕</button></div>' +
       (inApp ? '<p style="background:#FEF3C7;padding:8px 10px;border-radius:8px;font-size:13px">Vous êtes dans le navigateur de Facebook, Instagram ou TikTok : touchez <b>⋯</b> puis <b>« Ouvrir dans ' + (ios ? 'Safari' : 'Chrome') + ' »</b>, puis suivez ces étapes.</p>' : '') +
+      (why === 'push' ? '<p style="background:#EEF2FF;padding:8px 10px;border-radius:8px;font-size:13px">🔔 Sur iPhone, les notifications fonctionnent dans l\'app installée : installez-la, ouvrez-la depuis l\'écran d\'accueil puis activez les notifications.</p>' : '') +
       '<ol style="padding-left:20px;margin:12px 0 0">' + steps.map(function (x) { return '<li style="margin:8px 0">' + x + '</li>'; }).join('') + '</ol></div></div>');
     m.onclick = function (e) { if (e.target === m || e.target.hasAttribute('data-x')) m.remove(); };
     document.body.appendChild(m);
@@ -55,6 +56,53 @@
     } else guide();
   }
   window.MirebInstall = install;
+
+  // ---------- Notifications push ----------
+  // MirebPush.button(bouton, '/vendor/api/push/subscribe', { corps en plus }, { en-têtes en plus })
+  var b64 = function (k) { var p = '='.repeat((4 - k.length % 4) % 4), r = atob((k + p).replace(/-/g, '+').replace(/_/g, '/')), a = new Uint8Array(r.length);
+    for (var i = 0; i < r.length; i++) a[i] = r.charCodeAt(i); return a; };
+  var pushOk = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  window.MirebPush = {
+    // iPhone : les notifications ne marchent que dans l'app installée (écran d'accueil)
+    needsInstall: function () { return ios && !standalone; },
+    supported: function () { return pushOk; },
+    enable: function (url, body, headers) {
+      if (this.needsInstall()) return Promise.reject(new Error('install'));
+      if (!pushOk) return Promise.reject(new Error('Ce navigateur ne gère pas les notifications.'));
+      return Notification.requestPermission().then(function (perm) {
+        if (perm !== 'granted') throw new Error('Notifications bloquées : autorisez-les dans les réglages du navigateur pour ce site.');
+        return navigator.serviceWorker.register('/sw.js').then(function () { return navigator.serviceWorker.ready; });
+      }).then(function (reg) {
+        return fetch('/public/push/key').then(function (r) { return r.json(); }).then(function (k) {
+          return reg.pushManager.getSubscription().then(function (sub) {
+            return sub || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(k.key) }).catch(function () {
+              throw new Error('Impossible d\'activer les notifications sur ce navigateur. Essayez avec Chrome, Samsung Internet ou l\'application installée.');
+            });
+          });
+        });
+      }).then(function (sub) {
+        var h = { 'Content-Type': 'application/json' }; for (var x in headers || {}) h[x] = headers[x];
+        var data = { subscription: sub.toJSON() }; for (var y in body || {}) data[y] = body[y];
+        return fetch(url, { method: 'POST', headers: h, credentials: 'same-origin', body: JSON.stringify(data) }).then(function (r) {
+          if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || 'Erreur'); });
+        });
+      });
+    },
+    button: function (btn, url, body, headers) {
+      if (!btn) return;
+      var on = function () { btn.textContent = '🔔 Notifications activées'; btn.disabled = true; };
+      if (!pushOk && !this.needsInstall()) { btn.hidden = true; return; }
+      var self = this;
+      // Déjà autorisé sur cet appareil : on réabonne sans rien demander (garde le lien avec ce compte)
+      if (pushOk && Notification.permission === 'granted' && !self.needsInstall()) self.enable(url, body, headers).then(on, function () {});
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (self.needsInstall()) { guide('push'); return; }
+        btn.disabled = true;
+        self.enable(url, body, headers).then(on, function (err) { btn.disabled = false; alert(err.message); });
+      });
+    },
+  };
 
   if (standalone) { buttons(false); return; }
   document.addEventListener('DOMContentLoaded', function () {

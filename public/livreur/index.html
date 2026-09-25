@@ -15,7 +15,7 @@ p.m{text-align:center;color:#6b7280;padding:30px}
 </style></head>
 <body>
 <header><b id="n">Mireb Livreur</b><br><small id="gps">GPS : en attente…</small>
-<button data-pwa-install hidden style="float:right;margin-top:-30px;background:#E8342A;color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:700">📲 Installer</button></header>
+<button id="pushbtn" style="float:right;margin:-30px 0 0 6px;background:#2563eb;color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:700">🔔</button><button data-pwa-install hidden style="float:right;margin-top:-30px;background:#E8342A;color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:700">📲 Installer</button></header>
 <div id="list"><p class="m">Chargement…</p></div>
 <script>
 const T = new URLSearchParams(location.search).get('t') || localStorage.getItem('mireb_t');
@@ -51,4 +51,5 @@ function sendPos() {
 load(); sendPos(); setInterval(sendPos, 30000); setInterval(load, 60000);
 </script>
 <script src="/pwa.js" data-app="Livreur" data-color="#E8342A" data-icon="/icons/livreur-192.png"></script>
+<script>MirebPush.button(document.getElementById('pushbtn'), '/public/courier/push/subscribe', {}, { 'x-token': T });</script>
 </body></html>

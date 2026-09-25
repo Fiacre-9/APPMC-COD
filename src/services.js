@@ -1,5 +1,21 @@
 const { db } = require('./db');
 const conn = require('./connectors');
+const push = require('./push');
+const cur = () => process.env.CURRENCY || '$';
+const fmt = (n) => `${(+n || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${cur()}`;
+
+// Messages envoyés au client (notification push) selon le statut de sa commande
+const CUSTOMER_PUSH = {
+  confirme: (o) => ['✅ Commande confirmée', `Votre commande n°${o.id} (${o.product_name}) est confirmée. À payer à la livraison : ${fmt(o.amount)}.`],
+  expedie: (o) => ['📦 Commande expédiée', `Votre commande n°${o.id} est en route vers votre ville.`],
+  en_livraison: (o) => ['🚚 Votre colis arrive !', `Le livreur est en route avec votre commande n°${o.id}. Préparez ${fmt(o.amount)}.`],
+  livre: (o) => ['🎉 Commande livrée', `Merci pour votre confiance ! Commande n°${o.id} livrée.`],
+  annule: (o) => ['Commande annulée', `Votre commande n°${o.id} a été annulée. Contactez-nous en cas de question.`],
+};
+function notifyCourier(courierId, o) {
+  push.notify('courier', courierId, { title: '📦 Nouvelle livraison', body: `Commande n°${o.id} — ${o.name}, ${o.city || o.address} · ${fmt(o.amount)}`,
+    url: '/livreur/', tag: `livraison-${o.id}` });
+}
 
 // ---------- CRM ----------
 function upsertCustomer({ name, phone, address, city }) {
@@ -53,6 +69,9 @@ function createOrder(d) {
   db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(id, d.status || 'nouveau', 'Commande créée');
   if (product) moveStock(product.id, -qty, 'sortie', `Commande #${id}`);
   runAutomations('status:' + (d.status || 'nouveau'), id);
+  const note = { title: `🛒 Nouvelle commande n°${id}`, body: `${product?.name || d.product_name || 'Produit'} × ${qty} — ${fmt(amount)} · ${d.name}${d.city ? ', ' + d.city : ''}`, tag: `commande-${id}` };
+  if (product?.vendor_id) push.notify('vendor', product.vendor_id, { ...note, url: '/vendeur/#orders' });
+  push.notify('admin', null, { ...note, url: '/#orders' });
   return id;
 }
 
@@ -75,6 +94,10 @@ function setStatus(id, status, note = '') {
   if (status === 'confirme' && !o.courier_id) autoAssign(id);
 
   runAutomations('status:' + status, id);
+  if (CUSTOMER_PUSH[status] && status !== o.status) {
+    const [title, body] = CUSTOMER_PUSH[status](o);
+    push.notify('customer', id, { title, body, url: `/suivi?n=${id}`, tag: `suivi-${id}` });
+  }
   syncOrder(id).catch(() => {});
 }
 
@@ -88,6 +111,7 @@ function autoAssign(orderId) {
   if (match) {
     db.prepare('UPDATE orders SET courier_id=? WHERE id=?').run(match.id, orderId);
     db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(orderId, o.status, `Auto-assigné au livreur ${match.name}`);
+    notifyCourier(match.id, o);
   }
   return match?.id || null;
 }
@@ -188,5 +212,5 @@ async function pushUnsynced() {
   return { total: ids.length, ok };
 }
 
-module.exports = { slugify, productSlug, vendorSlug, upsertCustomer, customerStats, createOrder, setStatus, autoAssign, moveStock, courierBalance, agentDue,
+module.exports = { notifyCourier, slugify, productSlug, vendorSlug, upsertCustomer, customerStats, createOrder, setStatus, autoAssign, moveStock, courierBalance, agentDue,
   runDelayedAutomations, importProducts, importWcOrder, pullOrders, pushUnsynced, syncOrder };

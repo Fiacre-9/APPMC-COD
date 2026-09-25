@@ -77,6 +77,23 @@ Synchronisation automatique également toutes les 5 min.
 - Fichiers : `src/routes/pwa.js` (manifestes), `public/sw.js` (service worker), `public/pwa.js` (bouton/guide d'installation), `public/icons/`.
 - Après une modification des fichiers du site, augmenter `VERSION` dans `public/sw.js` pour vider les anciens caches.
 
+## Notifications push
+| Qui | Quand | Activation |
+|---|---|---|
+| Vendeur | 🛒 nouvelle commande sur ses produits | 🔔 dans l'espace vendeur (menu + tableau de bord) |
+| Admin | 🛒 chaque nouvelle commande | 🔔 dans le menu de l'admin |
+| Livreur | 📦 livraison assignée (auto ou manuelle) | 🔔 en haut de l'app livreur |
+| Client | ✅ confirmée · 📦 expédiée · 🚚 « votre colis arrive » · 🎉 livrée · annulée | bouton après la commande et sur `/suivi` |
+
+- Android / ordinateur : fonctionne dans le navigateur et dans l'app installée. **iPhone (iOS ≥ 16.4) : uniquement dans l'app installée** sur l'écran d'accueil (le bouton affiche alors le guide d'installation).
+- Clés VAPID créées automatiquement au premier démarrage et gardées en base (ou `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`).
+- Un client ne peut s'abonner qu'au suivi de sa propre commande (jeton signé reçu après la commande ou sur `/suivi` avec son téléphone).
+- Code : `src/push.js` (envoi), `public/sw.js` (affichage), `public/pwa.js` (`MirebPush.button`).
+
+## Google Play Store (Android)
+Guide pas à pas : [`docs/ANDROID-PLAY-STORE.md`](docs/ANDROID-PLAY-STORE.md) (PWABuilder → empreinte SHA-256 dans ⚙️ Paramètres → Play Console).
+Vérification Google servie sur `/.well-known/assetlinks.json` ; politique de confidentialité sur `/confidentialite`.
+
 ## Déploiement (Hostinger / VPS)
 Node ≥ 22.13 (SQLite intégré `node:sqlite`, aucune compilation native), commande de démarrage `npm start`, variables d'environnement à définir dans le panneau (ne pas committer `.env`).
 

@@ -58,11 +58,14 @@ async function home(v) {
     <div class="card kpi"><b>${t.n}</b><span>Commandes</span></div>
     <div class="card kpi"><b>${t.nouveau || 0}</b><span>À confirmer</span></div>
     <div class="card kpi"><b>${money(t.ca)}</b><span>CA livré</span></div></div>
+  <div class="card row"><span>🔔 Recevez une notification à chaque nouvelle commande, même téléphone verrouillé.</span>
+    <button id="pushbtn2" style="flex:0 0 auto">Activer les notifications</button></div>
   <div class="card"><h3>Démarrer</h3><ol>
     <li>Ajoutez un produit dans <a href="#products">Mes produits</a> (photo, prix, description).</li>
     <li>Copiez le <b>lien de la page produit</b> : le formulaire de commande y est déjà intégré.</li>
     <li>Partagez-le sur Facebook, TikTok, WhatsApp… Les commandes arrivent dans <a href="#orders">Mes commandes</a>.</li></ol>
     <p>Votre boutique : <a target="_blank" href="/boutique/${esc(ME.slug)}">${location.origin}/boutique/${esc(ME.slug)}</a></p></div>`;
+  if (window.MirebPush) MirebPush.button($('#pushbtn2'), '/vendor/api/push/subscribe');
 }
 
 // ---------- Produits ----------

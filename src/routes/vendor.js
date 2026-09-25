@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { db, STATUSES, CATEGORIES } = require('../db');
 const S = require('../services');
 const { saveImage } = require('../uploads');
+const push = require('../push');
 
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
@@ -101,6 +102,8 @@ module.exports = (SECRET) => {
     else db.prepare('DELETE FROM products WHERE id=?').run(p.id);
     res.json({ ok: true });
   }));
+
+  router.post('/api/push/subscribe', wrap((req, res) => { push.subscribe(req.body.subscription, 'vendor', req.vendor.id); res.json({ ok: true }); }));
 
   // ---------- Commandes ----------
   router.get('/api/orders', (req, res) => {

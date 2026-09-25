@@ -3,6 +3,7 @@
 const router = require('express').Router();
 const { db, getSetting, CATEGORIES, STATUSES } = require('../db');
 const md = require('../../public/markdown.js');
+const push = require('../push');
 
 const esc = md.escape;
 const money = n => `${(+n || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${process.env.CURRENCY || '$'}`;
@@ -143,7 +144,7 @@ ${image ? `<meta property="og:image" content="${esc(base + image)}">` : ''}
 <a href="/suivi" class="hic" aria-label="Suivi de commande">🚚</a><a href="/vendeur/" class="hic" aria-label="Espace vendeur">👤</a></header>
 ${catbar}<main class="wrap">${body}</main>
 <div class="wrap"><div class="tr"><div><span>🚚</span>Livraison rapide</div><div><span>💵</span>Paiement à la réception</div><div><span>📞</span>Service client</div></div></div>
-<footer class="ft"><b>${esc(name)}</b><br>Commandez en ligne, payez à la livraison.<br><br><a href="/suivi">Suivre ma commande</a> · <a href="/vendeur/#inscription">Vendre sur ${esc(name)}</a>
+<footer class="ft"><b>${esc(name)}</b><br>Commandez en ligne, payez à la livraison.<br><br><a href="/suivi">Suivre ma commande</a> · <a href="/vendeur/#inscription">Vendre sur ${esc(name)}</a> · <a href="/confidentialite">Confidentialité</a>
 <br><br><button type="button" class="btn r" data-pwa-install hidden>📲 Installer l'application</button></footer>
 <nav class="bn" aria-label="Navigation">${bn('home', '/boutique', '🏠', 'Maison')}${bn('cats', '/boutique#categories', '☰', 'Catégories')}
 ${bn('', nav === 'product' ? '#mireb-commande" data-goto-form="1' : '/boutique#tous', '🛒', 'Commander', 'cmd')}${bn('suivi', '/suivi', '🚚', 'Suivi')}${bn('', '/vendeur/', '👤', 'Vendre')}</nav>
@@ -241,13 +242,32 @@ router.get('/suivi', (req, res) => {
       const reached = s => at[s] || (s === 'livre' && at.paye) || STATUSES.indexOf(o.status) >= STATUSES.indexOf(s) && !failed;
       result = `<h2 style="font-size:1.05rem;margin:18px 0 0">Commande n°${o.id} — ${esc(o.product_name)} × ${o.qty} · <span style="color:var(--a)">${money(o.amount)}</span></h2>
         <ul class="steps">${flow.map(s => `<li class="${reached(s) ? 'ok' : ''}"><i>${reached(s) ? '✓' : ''}</i>${LABEL[s]}<small>${esc(at[s] || '')}</small></li>`).join('')}
-        ${failed ? `<li class="ko ok"><i>✕</i>${LABEL[o.status]}<small>${esc(at[o.status] || '')}</small></li>` : ''}</ul>`;
+        ${failed ? `<li class="ko ok"><i>✕</i>${LABEL[o.status]}<small>${esc(at[o.status] || '')}</small></li>` : ''}</ul>
+        ${failed || reached('livre') ? '' : `<button type="button" class="btn w" id="pushbtn" style="border:1.5px solid var(--p);margin-top:10px">🔔 Me prévenir quand mon colis arrive</button>
+        <script>addEventListener('load',function(){if(window.MirebPush)MirebPush.button(document.getElementById('pushbtn'),'/public/push/subscribe',{order_id:${o.id},token:'${push.orderToken(o.id)}'})})</script>`}`;
     }
   }
   res.send(layout({ title: `Suivi de commande — ${shopName()}`, active: 'suivi', catBar: false, body: `<div class="box"><h1>🚚 Suivre ma commande</h1>
     <p>Entrez le numéro reçu après votre commande et votre téléphone.</p>
     <form><input name="n" inputmode="numeric" placeholder="Numéro de commande (ex : 125)" value="${esc(n)}" required>
     <input name="tel" type="tel" placeholder="Votre téléphone" value="${esc(req.query.tel || '')}" required><button class="btn r">Voir le suivi</button></form>${result}</div>` }));
+});
+
+// ---------- Politique de confidentialité (obligatoire pour le Google Play Store) ----------
+router.get('/confidentialite', (req, res) => {
+  const name = esc(shopName()), mail = esc(process.env.ADMIN_EMAIL || 'admin@mireb.online');
+  res.send(layout({ title: `Confidentialité — ${shopName()}`, catBar: false, body: `<div class="box md"><h1>Politique de confidentialité</h1>
+    <p>Dernière mise à jour : ${new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</p>
+    <h3>Données collectées</h3><ul><li><b>Commande</b> : nom, téléphone, adresse et ville de livraison, produit commandé.</li>
+    <li><b>Vendeurs</b> : nom de boutique, email, téléphone, produits et photos publiés.</li>
+    <li><b>Livreurs</b> : position GPS pendant l'utilisation de l'application livreur, pour le suivi des livraisons.</li>
+    <li><b>Notifications</b> : si vous les activez, un identifiant technique d'appareil pour vous envoyer le suivi.</li></ul>
+    <h3>Utilisation</h3><p>Ces données servent uniquement à confirmer, livrer et suivre les commandes (appel, SMS, WhatsApp, notifications).
+    Elles ne sont ni vendues ni partagées à des fins publicitaires. Elles sont transmises au vendeur et au livreur concernés par la commande.</p>
+    <h3>Paiement</h3><p>Le paiement se fait à la livraison : aucune donnée bancaire n'est collectée par l'application.</p>
+    <h3>Conservation et suppression</h3><p>Les données sont conservées le temps nécessaire au suivi des commandes et à la comptabilité.
+    Pour consulter, corriger ou supprimer vos données, écrivez à <a href="mailto:${mail}">${mail}</a>.</p>
+    <h3>Contact</h3><p>${name} — <a href="mailto:${mail}">${mail}</a></p></div>` }));
 });
 
 module.exports = router;

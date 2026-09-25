@@ -2,6 +2,7 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const { db, getSetting } = require('../db');
 const S = require('../services');
+const push = require('../push');
 
 // Formulaire COD public (landing page, widget, page produit)
 router.post('/lead', (req, res) => {
@@ -13,13 +14,23 @@ router.post('/lead', (req, res) => {
     WHERE (p.id=? OR p.wc_id=?) AND (p.active=0 OR v.active=0)`).get(product_id, product_id))
     return res.status(400).json({ error: 'Ce produit n\'est plus disponible' });
   const id = S.createOrder({ name, phone, address, city, product_id, qty, channel_id: canal || null });
-  res.json({ ok: true, id, message: 'Merci ! Un conseiller vous appelle très vite pour confirmer.' });
+  res.json({ ok: true, id, track: push.orderToken(id), message: 'Merci ! Un conseiller vous appelle très vite pour confirmer.' });
 });
 
 router.get('/form-config', (req, res) => res.json({ color: getSetting('form_color', '#e8342a'),
   button: getSetting('form_button', 'Commander — Paiement à la livraison'), subtitle: getSetting('form_subtitle', 'Remplissez le formulaire, vous payez à la réception'),
   badge: getSetting('form_badge', ''), guarantee: getSetting('form_guarantee', '✅ Paiement à la livraison · Livraison rapide'),
   product: req.query.product_id ? db.prepare('SELECT id,name,price FROM products WHERE id=? OR wc_id=?').get(req.query.product_id, req.query.product_id) : null }));
+
+// ---------- Notifications push ----------
+router.get('/push/key', (req, res) => res.json({ key: push.publicKey }));
+// Client : suivi d'une commande (jeton reçu après la commande ou sur la page de suivi)
+router.post('/push/subscribe', (req, res) => {
+  const { subscription, order_id, token } = req.body;
+  if (!push.checkOrderToken(+order_id, token)) return res.status(403).json({ error: 'Lien de suivi invalide' });
+  try { push.subscribe(subscription, 'customer', +order_id); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/push/unsubscribe', (req, res) => { push.unsubscribe(req.body.endpoint); res.json({ ok: true }); });
 
 // Webhook WooCommerce (order.created) — Réglages > Avancé > Webhooks
 router.post('/webhooks/woocommerce', (req, res) => {
@@ -52,6 +63,10 @@ router.post('/courier/orders/:id/:action', courierAuth, (req, res) => {
   if (!map[req.params.action]) return res.status(400).json({ error: 'Action invalide' });
   S.setStatus(o.id, map[req.params.action], `Par livreur ${req.courier.name}`);
   res.json({ ok: true });
+});
+
+router.post('/courier/push/subscribe', courierAuth, (req, res) => {
+  try { push.subscribe(req.body.subscription, 'courier', req.courier.id); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 module.exports = router;

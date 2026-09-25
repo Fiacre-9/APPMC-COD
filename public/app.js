@@ -298,6 +298,13 @@ async function settings(v) {
   <div class="card"><h3>Intégrer le formulaire</h3><p>Page hébergée : <code>${location.origin}/commande.html?product_id=1</code></p>
   <p>Sur n'importe quel site (WordPress, landing page) :</p>
   <code>&lt;div data-mireb-form data-product="1" data-canal="1"&gt;&lt;/div&gt;&lt;script src="${location.origin}/widget.js"&gt;&lt;/script&gt;</code></div>
+  <div class="card"><h3>📱 Applications Android (Google Play)</h3>
+  <p class="mut">Après avoir créé l'app sur PWABuilder, collez ici une ligne par application : <b>nom du package</b> puis <b>empreinte SHA-256</b>
+  (fichier <code>assetlinks.json</code> du paquet ou Play Console → Intégrité de l'application → Signature). Vérification :
+  <a target="_blank" href="/.well-known/assetlinks.json">${location.origin}/.well-known/assetlinks.json</a></p>
+  <form class="f" onsubmit="event.preventDefault();api('/api/settings','PUT',formData(this)).then(()=>toast('Enregistré'))">
+  <textarea name="android_apps" rows="3" placeholder="online.mireb.boutique 14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5">${esc(s.android_apps)}</textarea>
+  <button>Enregistrer</button></form></div>
   <div class="card"><h3>Mot de passe admin</h3><form class="row" onsubmit="event.preventDefault();api('/auth/password','POST',formData(this)).then(()=>toast('Modifié'))">
   <input name="password" type="password" placeholder="Nouveau mot de passe" required minlength="8"><button>Changer</button></form></div>`;
 }
