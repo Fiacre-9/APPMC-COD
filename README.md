@@ -62,6 +62,21 @@ Tracking GPS → 🔑 Générer → envoyer le lien par WhatsApp. Le livreur voi
 WooCommerce → Réglages → Avancé → Webhooks → sujet « Commande créée » → URL `https://votre-app/public/webhooks/woocommerce`.
 Synchronisation automatique également toutes les 5 min.
 
+## Applications installables (PWA) — Android et iPhone
+| App | Adresse | Icône |
+|---|---|---|
+| Boutique (clients) | `/boutique` | bleue 🛍️ |
+| Vendeur | `/vendeur/` | orange 🏪 |
+| Livreur | lien personnel `/livreur/?t=…` (l'app installée garde le compte) | sombre 🚚 |
+| Gestion (admin) | `/` | rouge 📊 |
+
+- **Android (Chrome, Samsung Internet, Edge)** : bannière « Installer » ou bouton 📲 → installation native.
+- **iPhone / iPad** : pas d'installation automatique chez Apple → un guide s'affiche : Partager → « Sur l'écran d'accueil » → Ajouter (Safari, iOS ≥ 16.4 aussi dans Chrome).
+- Depuis Facebook / Instagram / TikTok (navigateur intégré), le guide indique d'ouvrir la page dans Safari ou Chrome.
+- **Hors connexion** : les pages et photos déjà vues restent disponibles ; commandes, connexions et données passent toujours par le réseau (jamais mises en cache).
+- Fichiers : `src/routes/pwa.js` (manifestes), `public/sw.js` (service worker), `public/pwa.js` (bouton/guide d'installation), `public/icons/`.
+- Après une modification des fichiers du site, augmenter `VERSION` dans `public/sw.js` pour vider les anciens caches.
+
 ## Déploiement (Hostinger / VPS)
 Node ≥ 22.13 (SQLite intégré `node:sqlite`, aucune compilation native), commande de démarrage `npm start`, variables d'environnement à définir dans le panneau (ne pas committer `.env`).
 

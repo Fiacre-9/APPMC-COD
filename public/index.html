@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mireb COD</title><link rel="stylesheet" href="/style.css"><link rel="manifest" href="/manifest.json">
-<link rel="icon" href="/icon.svg"><meta name="theme-color" content="#1d2330"></head>
+<title>Mireb COD</title><link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/icons/admin-192.png"><meta name="theme-color" content="#1d2330"><link rel="manifest" href="/manifests/admin.json"><link rel="apple-touch-icon" href="/icons/admin-apple.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Gestion"></head>
 <body>
 <div id="login" class="login hidden">
   <form onsubmit="login(event)">
@@ -12,7 +12,7 @@
   </form>
 </div>
 <div id="app" class="hidden">
-  <aside><h2>Mireb COD</h2><nav id="nav"></nav><button class="ghost" onclick="logout()">Déconnexion</button></aside>
+  <aside><h2>Mireb COD</h2><nav id="nav"></nav><button class="ghost" data-pwa-install hidden>📲 Installer l'app</button><button class="ghost" onclick="logout()">Déconnexion</button></aside>
   <main>
     <header><button class="burger" onclick="document.body.classList.toggle('open')">☰</button><h1 id="title"></h1></header>
     <div id="view"></div>
@@ -20,5 +20,5 @@
 </div>
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()"><div id="mbox" class="box"></div></div>
 <div id="toast"></div>
-<script src="/app.js"></script>
+<script src="/app.js"></script><script src="/pwa.js" data-app="Gestion" data-color="#E8342A" data-icon="/icons/admin-192.png"></script>
 </body></html>

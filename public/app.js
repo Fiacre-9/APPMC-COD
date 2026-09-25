@@ -302,5 +302,4 @@ async function settings(v) {
   <input name="password" type="password" placeholder="Nouveau mot de passe" required minlength="8"><button>Changer</button></form></div>`;
 }
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 boot();

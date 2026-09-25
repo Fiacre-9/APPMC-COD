@@ -18,7 +18,7 @@ const LABEL = { nouveau: 'Commande reçue', en_confirmation: 'En confirmation', 
 const CSS = `
 :root{--p:#1A56DB;--pd:#1543B0;--a:#E8342A;--ad:#C42820;--dk:#0F172A;--g:#64748B;--l:#F8FAFC;--b:#E2E8F0;--ok:#16A34A;--h:60px;
   --sh:0 4px 20px rgba(0,0,0,.12)}
-*,*::before,*::after{box-sizing:border-box}html{scroll-behavior:smooth}
+*,*::before,*::after{box-sizing:border-box}html{scroll-behavior:smooth}[hidden]{display:none!important}
 body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--dk);background:var(--l);
   -webkit-font-smoothing:antialiased;padding-top:var(--h);padding-bottom:68px}
 a{color:inherit;text-decoration:none}img{max-width:100%;display:block}
@@ -130,7 +130,10 @@ function layout({ title, desc = '', image = '', body, nav = '', active = '', cat
     ${CATEGORIES.map(c => `<a href="/boutique?cat=${c.slug}" class="${currentCat === c.slug ? 'on' : ''}"><span>${c.icon}</span> ${esc(c.name)}</a>`).join('')}</div></nav>` : '';
   const bn = (k, href, icon, label, cls = '') => `<a href="${href}" class="${cls} ${active === k ? 'on' : ''}"><span>${icon}</span>${label}</a>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><meta name="theme-color" content="#1A56DB"><link rel="icon" href="/icon.svg">
+<title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><meta name="theme-color" content="#1A56DB"><link rel="icon" href="/icons/boutique-192.png">
+<link rel="manifest" href="/manifests/boutique.json"><link rel="apple-touch-icon" href="/icons/boutique-apple.png">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="${esc(name)}">
 <meta property="og:type" content="${nav === 'product' ? 'product' : 'website'}"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
 ${image ? `<meta property="og:image" content="${esc(base + image)}">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -140,10 +143,11 @@ ${image ? `<meta property="og:image" content="${esc(base + image)}">` : ''}
 <a href="/suivi" class="hic" aria-label="Suivi de commande">🚚</a><a href="/vendeur/" class="hic" aria-label="Espace vendeur">👤</a></header>
 ${catbar}<main class="wrap">${body}</main>
 <div class="wrap"><div class="tr"><div><span>🚚</span>Livraison rapide</div><div><span>💵</span>Paiement à la réception</div><div><span>📞</span>Service client</div></div></div>
-<footer class="ft"><b>${esc(name)}</b><br>Commandez en ligne, payez à la livraison.<br><br><a href="/suivi">Suivre ma commande</a> · <a href="/vendeur/#inscription">Vendre sur ${esc(name)}</a></footer>
+<footer class="ft"><b>${esc(name)}</b><br>Commandez en ligne, payez à la livraison.<br><br><a href="/suivi">Suivre ma commande</a> · <a href="/vendeur/#inscription">Vendre sur ${esc(name)}</a>
+<br><br><button type="button" class="btn r" data-pwa-install hidden>📲 Installer l'application</button></footer>
 <nav class="bn" aria-label="Navigation">${bn('home', '/boutique', '🏠', 'Maison')}${bn('cats', '/boutique#categories', '☰', 'Catégories')}
 ${bn('', nav === 'product' ? '#mireb-commande" data-goto-form="1' : '/boutique#tous', '🛒', 'Commander', 'cmd')}${bn('suivi', '/suivi', '🚚', 'Suivi')}${bn('', '/vendeur/', '👤', 'Vendre')}</nav>
-<script>${JS}</script></body></html>`;
+<script>${JS}</script><script src="/pwa.js" data-app="${esc(name)}" data-color="#E8342A" data-icon="/icons/boutique-192.png" data-offset="76"${nav === 'product' ? ' data-auto="0"' : ''}></script></body></html>`;
 }
 
 function card(p, isNew = false) {

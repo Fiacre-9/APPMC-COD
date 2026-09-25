@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mireb Livreur</title><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1d2330">
+<title>Mireb Livreur</title><meta name="theme-color" content="#1d2330"><link rel="icon" href="/icons/livreur-192.png"><link rel="manifest" id="mf" href="/manifests/livreur.json"><link rel="apple-touch-icon" href="/icons/livreur-apple.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Livreur">
+<script>/* Le lien personnel reste dans l'adresse : l'app installée (iPhone compris) s'ouvre directement sur le compte */
+(function(){var q=new URLSearchParams(location.search),t=q.get('t');try{t=t||localStorage.getItem('mireb_t')}catch(e){}
+if(t&&/^[a-f0-9]{32}$/.test(t)){document.getElementById('mf').href='/manifests/livreur.json?t='+t;if(!q.get('t'))history.replaceState(null,'','?t='+t)}})();</script>
 <style>
 body{margin:0;font-family:system-ui,sans-serif;background:#f5f6f8;color:#1d2330}
 header{background:#1d2330;color:#fff;padding:14px 16px;position:sticky;top:0}header small{color:#94a3b8}
@@ -11,7 +14,8 @@ header{background:#1d2330;color:#fff;padding:14px 16px;position:sticky;top:0}hea
 p.m{text-align:center;color:#6b7280;padding:30px}
 </style></head>
 <body>
-<header><b id="n">Mireb Livreur</b><br><small id="gps">GPS : en attente…</small></header>
+<header><b id="n">Mireb Livreur</b><br><small id="gps">GPS : en attente…</small>
+<button data-pwa-install hidden style="float:right;margin-top:-30px;background:#E8342A;color:#fff;border:0;border-radius:8px;padding:7px 10px;font-weight:700">📲 Installer</button></header>
 <div id="list"><p class="m">Chargement…</p></div>
 <script>
 const T = new URLSearchParams(location.search).get('t') || localStorage.getItem('mireb_t');
@@ -46,4 +50,5 @@ function sendPos() {
 }
 load(); sendPos(); setInterval(sendPos, 30000); setInterval(load, 60000);
 </script>
+<script src="/pwa.js" data-app="Livreur" data-color="#E8342A" data-icon="/icons/livreur-192.png"></script>
 </body></html>

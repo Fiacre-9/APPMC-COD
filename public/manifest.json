@@ -1,2 +1,0 @@
-{ "name": "Mireb COD", "short_name": "Mireb COD", "start_url": "/", "display": "standalone", "theme_color": "#1d2330",
-  "background_color": "#ffffff", "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }] }

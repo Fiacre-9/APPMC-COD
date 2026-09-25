@@ -62,6 +62,7 @@ app.use('/api', auth, require('./routes/api'));
 app.use('/public', require('./routes/public'));
 app.use('/vendor', require('./routes/vendor')(SECRET));
 app.use(require('./routes/shop'));
+app.use(require('./routes/pwa'));
 app.use('/uploads', express.static(require('./uploads').dir, { maxAge: '30d' }));
 app.get('/health', (req, res) => res.json({ ok: true, connectors: conn.status() }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
