@@ -13,7 +13,7 @@ const conn = require('./connectors');
 const SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
 if (!process.env.JWT_SECRET) console.warn('⚠️  JWT_SECRET non défini dans .env — clé temporaire utilisée');
 const app = express();
-app.use(express.json({ limit: '2mb', verify: (req, _r, buf) => { req.rawBody = buf; } }));
+app.use(express.json({ limit: '6mb', verify: (req, _r, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
@@ -50,14 +50,27 @@ app.post('/auth/password', auth, (req, res) => {
   db.prepare('UPDATE users SET password=? WHERE id=?').run(bcrypt.hashSync(req.body.password, 10), req.user.id); res.json({ ok: true });
 });
 function auth(req, res, next) {
-  try { req.user = jwt.verify(req.cookies.token || '', SECRET); next(); }
+  try {
+    req.user = jwt.verify(req.cookies.token || '', SECRET);
+    if (req.user.vid) throw new Error('jeton vendeur'); // un jeton vendeur n'ouvre jamais l'admin
+    next();
+  }
   catch { res.status(401).json({ error: 'Non connecté' }); }
 }
 
 app.use('/api', auth, require('./routes/api'));
 app.use('/public', require('./routes/public'));
+app.use('/vendor', require('./routes/vendor')(SECRET));
+app.use(require('./routes/shop'));
+app.use('/uploads', express.static(require('./uploads').dir, { maxAge: '30d' }));
 app.get('/health', (req, res) => res.json({ ok: true, connectors: conn.status() }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Erreurs inattendues : message JSON, jamais de trace serveur envoyée au navigateur
+app.use((err, req, res, _next) => {
+  console.error(err);
+  res.status(err.status || 500).json({ error: err.expose ? err.message : 'Erreur serveur' });
+});
 
 // ---------- Tâches planifiées ----------
 cron.schedule('*/10 * * * *', () => S.runDelayedAutomations());

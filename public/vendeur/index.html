@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Espace vendeur</title><link rel="stylesheet" href="/style.css"><link rel="icon" href="/icon.svg"><meta name="theme-color" content="#1d2330">
+<style>.tabs{display:flex;gap:6px;margin-bottom:6px}.tabs button{flex:1}.tabs button.off{background:#e5e7eb;color:var(--ink)}
+.pimg{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f1f5f9}
+.prev{max-width:140px;border-radius:8px;display:block}.share{display:flex;gap:6px;flex-wrap:wrap}</style></head>
+<body>
+<div id="login" class="login hidden">
+  <form id="authf" onsubmit="auth(event)">
+    <h1>Espace vendeur</h1>
+    <div class="tabs"><button type="button" id="t-login" onclick="mode('login')">Connexion</button><button type="button" id="t-reg" class="off" onclick="mode('register')">Créer un compte</button></div>
+    <input name="shop_name" class="reg hidden" placeholder="Nom de votre boutique">
+    <input name="phone" class="reg hidden" placeholder="Téléphone / WhatsApp">
+    <input name="email" type="email" placeholder="Email" required autocomplete="username">
+    <input name="password" type="password" placeholder="Mot de passe (8 caractères min.)" required autocomplete="current-password">
+    <button id="abtn">Se connecter</button><div id="lerr" class="err"></div>
+  </form>
+</div>
+<div id="app" class="hidden">
+  <aside><h2 id="shop">Ma boutique</h2><nav id="nav"></nav><button class="ghost" onclick="logout()">Déconnexion</button></aside>
+  <main>
+    <header><button class="burger" onclick="document.body.classList.toggle('open')">☰</button><h1 id="title"></h1></header>
+    <div id="view"></div>
+  </main>
+</div>
+<div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()"><div id="mbox" class="box"></div></div>
+<div id="toast"></div>
+<script src="/vendeur/vendeur.js"></script>
+</body></html>

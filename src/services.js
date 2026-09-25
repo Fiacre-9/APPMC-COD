@@ -26,15 +26,30 @@ function customerStats(id) {
   return { orders: s.n, delivered: s.ok || 0, failed: s.ko || 0, spent: s.spent, score, segment };
 }
 
+// ---------- Boutique : slugs ----------
+const slugify = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'produit';
+function productSlug(id) {
+  const p = db.prepare('SELECT id, name FROM products WHERE id=?').get(id);
+  if (p) db.prepare('UPDATE products SET slug=? WHERE id=?').run(`${slugify(p.name)}-${p.id}`, p.id);
+}
+function vendorSlug(name) {
+  const base = slugify(name); let s = base, i = 1;
+  while (db.prepare('SELECT 1 FROM vendors WHERE slug=?').get(s)) s = `${base}-${++i}`;
+  return s;
+}
+// Produits existants sans page : on leur attribue une adresse
+db.prepare('SELECT id FROM products WHERE slug IS NULL').all().forEach(p => productSlug(p.id));
+
 // ---------- Commandes ----------
 function createOrder(d) {
   const product = d.product_id ? db.prepare('SELECT * FROM products WHERE id=? OR wc_id=?').get(d.product_id, d.product_id) : null;
   const qty = +d.qty || 1;
   const customer_id = upsertCustomer(d);
   const amount = d.amount != null ? +d.amount : (product ? product.price * qty : 0);
-  const id = db.prepare(`INSERT INTO orders(wc_id,customer_id,product_id,product_name,qty,amount,name,phone,address,city,channel_id,status)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(d.wc_id || null, customer_id, product?.id || null, product?.name || d.product_name || '',
-    qty, amount, d.name, d.phone, d.address, d.city || '', d.channel_id || null, d.status || 'nouveau').lastInsertRowid;
+  const id = db.prepare(`INSERT INTO orders(wc_id,customer_id,product_id,product_name,qty,amount,name,phone,address,city,channel_id,status,vendor_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(d.wc_id || null, customer_id, product?.id || null, product?.name || d.product_name || '',
+    qty, amount, d.name, d.phone, d.address, d.city || '', d.channel_id || null, d.status || 'nouveau', product?.vendor_id || null).lastInsertRowid;
   db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(id, d.status || 'nouveau', 'Commande créée');
   if (product) moveStock(product.id, -qty, 'sortie', `Commande #${id}`);
   runAutomations('status:' + (d.status || 'nouveau'), id);
@@ -145,6 +160,8 @@ async function importProducts() {
     for (const p of list) {
       db.prepare(`INSERT INTO products(wc_id,name,price,stock) VALUES(?,?,?,?) ON CONFLICT(wc_id) DO UPDATE SET name=excluded.name, price=excluded.price`)
         .run(p.id, p.name, +p.price || 0, p.stock_quantity || 0); n++;
+      const row = db.prepare('SELECT id, slug FROM products WHERE wc_id=?').get(p.id);
+      if (!row.slug) productSlug(row.id);
     }
   } while (list.length === 100);
   return n;
@@ -171,5 +188,5 @@ async function pushUnsynced() {
   return { total: ids.length, ok };
 }
 
-module.exports = { upsertCustomer, customerStats, createOrder, setStatus, autoAssign, moveStock, courierBalance, agentDue,
+module.exports = { slugify, productSlug, vendorSlug, upsertCustomer, customerStats, createOrder, setStatus, autoAssign, moveStock, courierBalance, agentDue,
   runDelayedAutomations, importProducts, importWcOrder, pullOrders, pushUnsynced, syncOrder };

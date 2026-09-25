@@ -8,7 +8,7 @@
       var col = el.getAttribute('data-color') || c.color, p = c.product;
       el.innerHTML = '<form style="font-family:system-ui,sans-serif;max-width:420px;border:2px solid ' + col + ';border-radius:12px;padding:18px;display:grid;gap:10px">' +
         (c.badge ? '<span style="background:' + col + ';color:#fff;padding:3px 10px;border-radius:99px;width:max-content;font-size:13px">' + esc(c.badge) + '</span>' : '') +
-        (p ? '<b style="font-size:18px">' + esc(el.getAttribute('data-titre') || p.name) + '</b><div>' + (el.getAttribute('data-prix-barre') ? '<s style="color:#888">' + esc(el.getAttribute('data-prix-barre')) + '</s> ' : '') + '<b style="color:' + col + ';font-size:20px">' + esc(el.getAttribute('data-prix') || p.price) + '</b></div>' : '') +
+        (p && !el.hasAttribute('data-compact') ? '<b style="font-size:18px">' + esc(el.getAttribute('data-titre') || p.name) + '</b><div>' + (el.getAttribute('data-prix-barre') ? '<s style="color:#888">' + esc(el.getAttribute('data-prix-barre')) + '</s> ' : '') + '<b style="color:' + col + ';font-size:20px">' + esc(el.getAttribute('data-prix') || p.price) + '</b></div>' : '') +
         '<small style="color:#555">' + esc(c.subtitle) + '</small>' +
         ['name|Nom complet', 'phone|Téléphone', 'address|Adresse complète', 'city|Ville'].map(function (f) { f = f.split('|');
           return '<input name="' + f[0] + '" placeholder="' + f[1] + '" ' + (f[0] !== 'city' ? 'required' : '') + ' style="padding:12px;border:1px solid #ccc;border-radius:8px;font-size:16px">'; }).join('') +

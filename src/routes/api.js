@@ -4,7 +4,7 @@ const { db, STATUSES, getSetting, setSetting } = require('../db');
 const S = require('../services');
 const conn = require('../connectors');
 
-const wrap = fn => (req, res) => Promise.resolve(fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
+const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
 
 function crud(table, fields) {
@@ -12,6 +12,7 @@ function crud(table, fields) {
   router.post(`/${table}`, wrap((req, res) => {
     const d = pick(req.body, fields); const k = Object.keys(d);
     const id = db.prepare(`INSERT INTO ${table}(${k}) VALUES(${k.map(() => '?')})`).run(...Object.values(d)).lastInsertRowid;
+    if (table === 'products') S.productSlug(id); // adresse de la page produit /p/...
     res.json({ id });
   }));
   router.put(`/${table}/:id`, wrap((req, res) => {
@@ -37,8 +38,8 @@ router.get('/orders', (req, res) => {
   const { status, q } = req.query; const w = []; const p = [];
   if (status) { w.push('o.status=?'); p.push(status); }
   if (q) { w.push('(o.name LIKE ? OR o.phone LIKE ? OR o.id=?)'); p.push(`%${q}%`, `%${q}%`, q); }
-  res.json(db.prepare(`SELECT o.*, a.first_name||' '||COALESCE(a.last_name,'') agent, c.name courier, ch.name channel, cu.blacklisted
-    FROM orders o LEFT JOIN agents a ON a.id=o.agent_id LEFT JOIN couriers c ON c.id=o.courier_id
+  res.json(db.prepare(`SELECT o.*, a.first_name||' '||COALESCE(a.last_name,'') agent, c.name courier, ch.name channel, cu.blacklisted, v.shop_name vendor
+    FROM orders o LEFT JOIN vendors v ON v.id=o.vendor_id LEFT JOIN agents a ON a.id=o.agent_id LEFT JOIN couriers c ON c.id=o.courier_id
     LEFT JOIN channels ch ON ch.id=o.channel_id LEFT JOIN customers cu ON cu.id=o.customer_id
     ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY o.id DESC LIMIT 500`).all(...p));
 });
@@ -102,7 +103,19 @@ router.post('/couriers/:id/token', (req, res) => {
 });
 
 // ---------- Stock, produits, canaux ----------
-crud('products', ['name', 'price', 'stock', 'wc_id']);
+crud('products', ['name', 'price', 'compare_price', 'stock', 'wc_id', 'description', 'active', 'vendor_id']);
+router.post('/products/:id/image', wrap((req, res) => {
+  db.prepare('UPDATE products SET image=? WHERE id=?').run(require('../uploads').saveImage(req.body.image_data), req.params.id); res.json({ ok: true });
+}));
+
+// ---------- Vendeurs (multivendeur) ----------
+router.get('/vendors', (req, res) => res.json(db.prepare(`SELECT v.id, v.shop_name, v.slug, v.email, v.phone, v.active, v.created_at,
+  (SELECT COUNT(*) FROM products WHERE vendor_id=v.id) products, (SELECT COUNT(*) FROM orders WHERE vendor_id=v.id) orders,
+  (SELECT COALESCE(SUM(amount),0) FROM orders WHERE vendor_id=v.id AND status IN ('livre','paye')) ca
+  FROM vendors v ORDER BY v.id DESC`).all()));
+router.put('/vendors/:id', wrap((req, res) => {
+  db.prepare('UPDATE vendors SET active=? WHERE id=?').run(req.body.active ? 1 : 0, req.params.id); res.json({ ok: true });
+}));
 crud('channels', ['name']);
 router.get('/stock-moves', (req, res) => res.json(db.prepare(`SELECT m.*, p.name FROM stock_moves m LEFT JOIN products p ON p.id=m.product_id
   ORDER BY m.id DESC LIMIT 200`).all()));

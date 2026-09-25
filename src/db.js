@@ -47,9 +47,24 @@ CREATE TABLE IF NOT EXISTS commissions (id INTEGER PRIMARY KEY, agent_id INTEGER
 CREATE TABLE IF NOT EXISTS courier_payments (id INTEGER PRIMARY KEY, courier_id INTEGER, amount REAL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS automations (id INTEGER PRIMARY KEY, name TEXT, trigger TEXT, channel TEXT, target TEXT DEFAULT 'client',
   template TEXT, delay_hours INTEGER DEFAULT 0, active INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS vendors (id INTEGER PRIMARY KEY, shop_name TEXT, slug TEXT UNIQUE, email TEXT UNIQUE, password TEXT,
+  phone TEXT, whatsapp TEXT, description TEXT DEFAULT '', active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS automation_log (id INTEGER PRIMARY KEY, automation_id INTEGER, order_id INTEGER, ok INTEGER, info TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(automation_id, order_id));
 `);
+
+// Migrations (colonnes ajoutées pour la boutique multivendeur)
+const addCol = (t, c, def) => {
+  if (!db.prepare(`PRAGMA table_info(${t})`).all().some(x => x.name === c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`);
+};
+addCol('products', 'vendor_id', 'INTEGER');
+addCol('products', 'slug', 'TEXT');
+addCol('products', 'description', "TEXT DEFAULT ''");
+addCol('products', 'image', "TEXT DEFAULT ''");
+addCol('products', 'compare_price', 'REAL');
+addCol('products', 'active', 'INTEGER DEFAULT 1');
+addCol('orders', 'vendor_id', 'INTEGER');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS products_slug ON products(slug)');
 
 const getSetting = (k, d = '') => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value ?? d;
 const setSetting = (k, v) => db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v));

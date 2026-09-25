@@ -18,6 +18,15 @@ Application autonome de gestion des commandes **Cash-on-Delivery** (version Node
 | Automatisations | WhatsApp / SMS / Email sur changement de statut, avec délai (ex. alerte 24h) |
 | Synchronisation | WooCommerce : import produits/commandes, push statuts, webhook temps réel |
 | Paramètres | Personnalisation du formulaire COD |
+| Vendeurs | Multivendeur : liste des boutiques, CA, suspension/réactivation |
+
+## Boutique multivendeur
+- **Inscription vendeur** : `https://votre-app/vendeur/#inscription` (connexion : `/vendeur/`). Chaque vendeur a un accès unique et ne voit que ses produits et ses commandes.
+- **Produits** : photo, prix, ancien prix barré, stock, description, visible/masqué.
+- **Page produit** `https://votre-app/p/<nom-du-produit>` : fiche + formulaire de commande COD déjà lié au produit (ajoutez `?canal=ID` pour suivre une pub).
+- **Boutique du vendeur** : `/boutique/<vendeur>` · **Marketplace** (tous les vendeurs) : `/boutique`.
+- Les commandes reçues via la page d'un vendeur lui sont attribuées ; l'admin les voit toutes (colonne 🏪) et peut suspendre un vendeur (ses pages et son formulaire sont alors désactivés).
+- Les photos sont stockées dans `DATA_DIR/uploads` (hors du dossier de l'app, conservées aux redéploiements).
 
 ## Connecteurs (`.env`)
 - **WooCommerce** REST v3 : `WC_URL`, `WC_KEY`, `WC_SECRET` (+ `WC_WEBHOOK_SECRET`)
@@ -62,5 +71,7 @@ src/services.js         logique métier (statuts, commissions, auto-assign, CRM,
 src/connectors/         WooCommerce, WhatsApp, SMS, Email
 src/routes/api.js       API admin (protégée)
 src/routes/public.js    formulaire, webhook, API livreur
-public/                 admin SPA, widget.js, commande.html, livreur/ (PWA)
+src/routes/vendor.js    espace vendeur (inscription, produits, commandes)
+src/routes/shop.js      pages publiques : /p/:produit, /boutique, /boutique/:vendeur
+public/                 admin SPA, widget.js, commande.html, livreur/ (PWA), vendeur/ (espace vendeur)
 ```

@@ -8,6 +8,10 @@ router.post('/lead', (req, res) => {
   const { name, phone, address, city, product_id, qty, canal } = req.body;
   if (!name || !phone || !address) return res.status(400).json({ error: 'Nom, téléphone et adresse sont obligatoires' });
   if (!/^[+\d][\d\s-]{7,}$/.test(phone)) return res.status(400).json({ error: 'Téléphone invalide' });
+  // Produit masqué par son vendeur ou vendeur suspendu : plus de commande possible
+  if (product_id && db.prepare(`SELECT 1 FROM products p LEFT JOIN vendors v ON v.id=p.vendor_id
+    WHERE (p.id=? OR p.wc_id=?) AND (p.active=0 OR v.active=0)`).get(product_id, product_id))
+    return res.status(400).json({ error: 'Ce produit n\'est plus disponible' });
   const id = S.createOrder({ name, phone, address, city, product_id, qty, channel_id: canal || null });
   res.json({ ok: true, id, message: 'Merci ! Un conseiller vous appelle très vite pour confirmer.' });
 });

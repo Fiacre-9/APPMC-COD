@@ -31,7 +31,7 @@ async function logout() { await api('/auth/logout', 'POST'); showLogin(); }
 // ---------- Navigation ----------
 const PAGES = {
   dashboard: ['📊 Tableau de bord', dashboard], orders: ['📦 Commandes COD', orders], crm: ['👥 CRM Clients', crm],
-  agents: ['☎️ Agents', agents], couriers: ['🚚 Livreurs', couriers], stock: ['🏷️ Stock', stock], channels: ['📣 Canaux de vente', channels],
+  vendors: ['🏪 Vendeurs', vendors], agents: ['☎️ Agents', agents], couriers: ['🚚 Livreurs', couriers], stock: ['🏷️ Stock', stock], channels: ['📣 Canaux de vente', channels],
   stats: ['📈 Statistiques', stats], kanban: ['🗂️ Pipeline Kanban', kanban], automations: ['⚡ Automatisations', automations],
   tracking: ['📍 Tracking GPS', tracking], sync: ['🔄 Synchronisation', sync], settings: ['⚙️ Paramètres', settings],
 };
@@ -83,7 +83,7 @@ async function orders(v, filter = {}) {
     <button onclick="newOrder()">+ Commande</button></div>
   <div class="card tw"><table><tr><th>#</th><th>Client</th><th>Produit</th><th>Montant</th><th>Statut</th><th>Agent</th><th>Livreur</th><th></th></tr>
   ${rows.map(o => `<tr><td>${o.id}</td><td>${o.blacklisted ? '🚫 ' : ''}<b>${esc(o.name)}</b><br><a href="tel:${esc(o.phone)}">${esc(o.phone)}</a><br><span class="mut">${esc(o.city)}</span></td>
-    <td>${esc(o.product_name)} × ${o.qty}</td><td>${money(o.amount)}</td>
+    <td>${esc(o.product_name)} × ${o.qty}${o.vendor ? `<br><span class="mut">🏪 ${esc(o.vendor)}</span>` : ''}</td><td>${money(o.amount)}</td>
     <td><select onchange="setStatus(${o.id},this.value)">${META.statuses.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${LABEL[s]}</option>`).join('')}</select></td>
     <td><select onchange="assign(${o.id},{agent_id:this.value})">${opts(lists.agents, o.agent_id, a => a.first_name + ' ' + a.last_name)}</select></td>
     <td><select onchange="assign(${o.id},{courier_id:this.value})">${opts(lists.couriers, o.courier_id, c => c.name)}</select></td>
@@ -204,13 +204,26 @@ async function stock(v) {
   const [p, m] = await Promise.all([api('/api/products'), api('/api/stock-moves')]);
   v.innerHTML = `<div class="card"><h3>Produits</h3><form class="row" onsubmit="event.preventDefault();api('/api/products','POST',formData(this)).then(route)">
     <input name="name" placeholder="Nom du produit" required><input name="price" type="number" step="0.01" placeholder="Prix"><input name="stock" type="number" placeholder="Stock initial"><button>+ Produit</button></form>
-    <div class="tw"><table><tr><th>ID</th><th>Produit</th><th>Prix</th><th>Stock</th><th>WooCommerce</th></tr>
-    ${p.map(x => `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${money(x.price)}</td><td><b>${x.stock}</b></td><td>${x.wc_id || '—'}</td></tr>`).join('')}</table></div></div>
+    <div class="tw"><table><tr><th>ID</th><th>Produit</th><th>Prix</th><th>Stock</th><th>WooCommerce</th><th>Page produit</th></tr>
+    ${p.map(x => `<tr><td>${x.id}</td><td>${x.active ? '' : '🙈 '}${esc(x.name)}</td><td>${money(x.price)}</td><td><b>${x.stock}</b></td><td>${x.wc_id || '—'}</td>
+      <td>${x.slug ? `<a target="_blank" href="/p/${esc(x.slug)}">/p/${esc(x.slug)}</a>` : '—'}</td></tr>`).join('')}</table></div></div>
   <div class="card"><h3>Mouvement de stock</h3><form class="row" onsubmit="event.preventDefault();api('/api/stock-moves','POST',formData(this)).then(route)">
     <select name="product_id">${p.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
     <select name="type"><option value="entree">Entrée</option><option value="sortie">Sortie</option></select>
     <input name="qty" type="number" placeholder="Quantité" required><input name="note" placeholder="Note"><button>Enregistrer</button></form>
     <div class="tw"><table>${m.map(x => `<tr><td>${esc(x.created_at)}</td><td>${esc(x.name)}</td><td>${x.qty > 0 ? '+' : ''}${x.qty}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div></div>`;
+}
+
+// ---------- Vendeurs (multivendeur) ----------
+async function vendors(v) {
+  const rows = await api('/api/vendors');
+  v.innerHTML = `<div class="card"><p>Les vendeurs créent leur compte eux-mêmes sur <a target="_blank" href="/vendeur/">${location.origin}/vendeur/</a>.
+    Chacun gère ses produits et voit uniquement ses commandes. Marketplace publique : <a target="_blank" href="/boutique">${location.origin}/boutique</a></p></div>
+  <div class="card tw"><table><tr><th>Boutique</th><th>Contact</th><th>Produits</th><th>Commandes</th><th>CA livré</th><th>Statut</th></tr>
+  ${rows.map(x => `<tr><td><b>${esc(x.shop_name)}</b><br><a target="_blank" href="/boutique/${esc(x.slug)}">/boutique/${esc(x.slug)}</a></td>
+    <td>${esc(x.email)}<br>${esc(x.phone)}</td><td>${x.products}</td><td>${x.orders}</td><td>${money(x.ca)}</td>
+    <td>${x.active ? '✅ Actif' : '⛔ Suspendu'}<br><button class="sm gray" onclick="api('/api/vendors/${x.id}','PUT',{active:${x.active ? 0 : 1}}).then(route)">
+    ${x.active ? 'Suspendre' : 'Réactiver'}</button></td></tr>`).join('') || '<tr><td colspan=6 class="mut">Aucun vendeur inscrit</td></tr>'}</table></div>`;
 }
 
 // ---------- Canaux ----------
