@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { db, getSetting } = require('../db');
 const S = require('../services');
 const push = require('../push');
+const meta = require('../meta');
 
 // Formulaire COD public (landing page, widget, page produit)
 router.post('/lead', (req, res) => {
@@ -14,7 +15,12 @@ router.post('/lead', (req, res) => {
     WHERE (p.id=? OR p.wc_id=?) AND (p.active=0 OR v.active=0)`).get(product_id, product_id))
     return res.status(400).json({ error: 'Ce produit n\'est plus disponible' });
   const id = S.createOrder({ name, phone, address, city, product_id, qty, channel_id: canal || null });
-  res.json({ ok: true, id, track: push.orderToken(id), message: 'Merci ! Un conseiller vous appelle très vite pour confirmer.' });
+  const o = db.prepare('SELECT amount, qty, product_id FROM orders WHERE id=?').get(id), c = meta.cfg();
+  meta.capi('Purchase', { eventId: `order-${id}`, url: req.get('referer') || '', ip: (req.get('x-forwarded-for') || req.ip || '').split(',')[0].trim(),
+    ua: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, phone, name, city, value: o.amount,
+    contentIds: o.product_id ? [o.product_id] : [], numItems: o.qty });
+  res.json({ ok: true, id, track: push.orderToken(id), value: o.amount, currency: c.currency, content_id: o.product_id ? String(o.product_id) : null,
+    message: 'Merci ! Un conseiller vous appelle très vite pour confirmer.' });
 });
 
 router.get('/form-config', (req, res) => res.json({ color: getSetting('form_color', '#e8342a'),

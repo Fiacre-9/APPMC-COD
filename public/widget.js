@@ -21,6 +21,9 @@
           .then(function (r) { return r.json(); }).then(function (r) {
             if (!r.ok) { f.querySelector('.mireb-msg').textContent = r.error; b.disabled = false; return; }
             f.innerHTML = '<h3 style="color:' + col + '">✅ Commande reçue (n°' + r.id + ')</h3><p>' + esc(r.message) + '</p><p><a style="color:' + col + ';font-weight:bold" href="' + base + '/suivi?n=' + r.id + '">🚚 Suivre ma commande</a></p>';
+            // Pixel Meta sur notre site : même event_id que l'API Conversions du serveur (pas de double comptage)
+            if (window.fbq && base === location.origin) fbq('track', 'Purchase', { value: r.value, currency: r.currency, content_type: 'product',
+              content_ids: r.content_id ? [r.content_id] : [], num_items: +d.qty || 1 }, { eventID: 'order-' + r.id });
             // Sur notre site (boutique, page commande) : proposer les notifications de suivi du colis
             if (r.track && window.MirebPush && base === location.origin && (MirebPush.supported() || MirebPush.needsInstall())) {
               var pb = document.createElement('button'); pb.type = 'button'; pb.textContent = '🔔 Me prévenir quand mon colis arrive';

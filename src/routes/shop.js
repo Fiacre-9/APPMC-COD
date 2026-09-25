@@ -1,14 +1,14 @@
 // Pages publiques au design du thème Mireb COD : accueil boutique, recherche/catégories,
 // page produit (galerie + formulaire COD + description Markdown), boutique vendeur, suivi de commande
 const router = require('express').Router();
-const { db, getSetting, CATEGORIES, STATUSES } = require('../db');
+const { db, getSetting, categories, STATUSES } = require('../db');
 const md = require('../../public/markdown.js');
 const push = require('../push');
 
 const esc = md.escape;
 const money = n => `${(+n || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${process.env.CURRENCY || '$'}`;
 const shopName = () => getSetting('shop_name', '') || 'Mireb';
-const CAT = Object.fromEntries(CATEGORIES.map(c => [c.slug, c]));
+const catMap = () => Object.fromEntries(categories().map(c => [c.slug, c]));
 const VISIBLE = 'p.active=1 AND (p.vendor_id IS NULL OR v.active=1)';
 const FROM = 'FROM products p LEFT JOIN vendors v ON v.id=p.vendor_id';
 const pct = p => p.compare_price > p.price ? Math.round((1 - p.price / p.compare_price) * 100) : 0;
@@ -125,10 +125,20 @@ function goForm(){var f=document.getElementById('mireb-commande');if(!f)return;f
 document.querySelectorAll('[data-goto-form]').forEach(function(a){a.onclick=function(e){e.preventDefault();goForm()}});
 var fm=document.getElementById('mireb-commande');if(fm&&location.hash==='#mireb-commande'){new MutationObserver(function(m,o){if(fm.querySelector('input')){o.disconnect();goForm()}}).observe(fm,{childList:true,subtree:true})}`;
 
-function layout({ title, desc = '', image = '', body, nav = '', active = '', catBar = true, currentCat = '' }) {
+// Pixel Meta (réglé dans Admin → Marketing) ; `track` = événement de la page, ex. ViewContent d'un produit du catalogue
+function pixel(track) {
+  const id = getSetting('meta_pixel_id');
+  if (!/^\d+$/.test(id || '')) return '';
+  return `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','${id}');fbq('track','PageView');${track ? `fbq('track',${JSON.stringify(track[0])},${JSON.stringify(track[1]).replace(/</g, '\\u003c')});` : ''}</script>`;
+}
+
+function layout({ title, desc = '', image = '', body, nav = '', active = '', catBar = true, currentCat = '', track = null }) {
   const name = shopName(), base = process.env.BASE_URL || '';
   const catbar = catBar ? `<nav class="cnav" aria-label="Catégories"><div><a href="/boutique" class="${!currentCat && active === 'home' ? 'on' : ''}"><span>🏠</span> Tous</a>
-    ${CATEGORIES.map(c => `<a href="/boutique?cat=${c.slug}" class="${currentCat === c.slug ? 'on' : ''}"><span>${c.icon}</span> ${esc(c.name)}</a>`).join('')}</div></nav>` : '';
+    ${categories().map(c => `<a href="/boutique?cat=${c.slug}" class="${currentCat === c.slug ? 'on' : ''}"><span>${c.icon}</span> ${esc(c.name)}</a>`).join('')}</div></nav>` : '';
   const bn = (k, href, icon, label, cls = '') => `<a href="${href}" class="${cls} ${active === k ? 'on' : ''}"><span>${icon}</span>${label}</a>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><meta name="theme-color" content="#1A56DB"><link rel="icon" href="/icons/boutique-192.png">
@@ -138,7 +148,7 @@ function layout({ title, desc = '', image = '', body, nav = '', active = '', cat
 <meta property="og:type" content="${nav === 'product' ? 'product' : 'website'}"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
 ${image ? `<meta property="og:image" content="${esc(base + image)}">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>${CSS}</style></head><body>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>${CSS}</style>${pixel(track)}</head><body>
 <header class="hd"><a href="/boutique" class="logo"><b>${esc(name.toUpperCase())}</b><small>COD STORE</small></a>
 <form class="srch" action="/boutique" role="search"><input type="search" name="q" placeholder="Rechercher un produit..." aria-label="Rechercher un produit"><button aria-label="Rechercher">🔍</button></form>
 <a href="/suivi" class="hic" aria-label="Suivi de commande">🚚</a><a href="/vendeur/" class="hic" aria-label="Espace vendeur">👤</a></header>
@@ -160,11 +170,11 @@ function card(p, isNew = false) {
 }
 const section = (title, content, link = '', id = '') => `<section class="sec"${id ? ` id="${id}"` : ''}><div class="sh"><h2 class="st">${title}</h2>${link}</div>${content}</section>`;
 const grid = (list, empty = 'Aucun produit pour le moment.') => list.length ? `<div class="grid">${list.map(p => card(p)).join('')}</div>` : `<p class="empty">${empty}</p>`;
-const catGrid = () => `<div class="cats">${CATEGORIES.map(c => `<a href="/boutique?cat=${c.slug}"><i>${c.icon}</i>${esc(c.name)}</a>`).join('')}</div>`;
+const catGrid = () => `<div class="cats">${categories().map(c => `<a href="/boutique?cat=${c.slug}"><i>${c.icon}</i>${esc(c.name)}</a>`).join('')}</div>`;
 
 // ---------- Accueil boutique / recherche / catégorie ----------
 router.get('/boutique', (req, res) => {
-  const q = String(req.query.q || '').trim().slice(0, 80), cat = CAT[req.query.cat] ? req.query.cat : '';
+  const CAT = catMap(), q = String(req.query.q || '').trim().slice(0, 80), cat = CAT[req.query.cat] ? req.query.cat : '';
   if (q || cat) {
     const w = [VISIBLE], a = [];
     if (cat) { w.push('p.category=?'); a.push(cat); }
@@ -194,12 +204,14 @@ router.get('/boutique', (req, res) => {
 router.get('/p/:slug', (req, res) => {
   const p = db.prepare(`SELECT p.*, v.shop_name, v.slug vslug ${FROM} WHERE p.slug=? AND ${VISIBLE}`).get(req.params.slug);
   if (!p) return res.status(404).send(layout({ title: 'Produit introuvable', body: `<p class="empty">Ce produit n'est plus disponible.<br><br><a class="btn r" href="/boutique">Voir la boutique</a></p>` }));
-  const off = pct(p), imgs = photos(p), c = CAT[p.category];
+  const off = pct(p), imgs = photos(p), c = catMap()[p.category];
   const canal = /^\d+$/.test(req.query.canal || req.query.mireb_canal || '') ? (req.query.canal || req.query.mireb_canal) : '';
   const related = db.prepare(`SELECT p.* ${FROM} WHERE ${VISIBLE} AND p.id<>? AND (p.category=? OR p.vendor_id IS ?) ORDER BY (p.category=?) DESC, p.id DESC LIMIT 10`)
     .all(p.id, p.category || '#', p.vendor_id, p.category || '#');
   const plain = String(p.short_description || p.description || '').replace(/[#*_>`\[\]()!-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 160);
-  res.send(layout({ title: p.name, desc: plain, image: imgs[0], nav: 'product', currentCat: p.category, body: `<div class="sp">
+  const track = ['ViewContent', { content_ids: [String(p.id)], content_type: 'product', content_name: p.name, value: +p.price,
+    currency: (getSetting('currency_code') || 'USD').toUpperCase() }];
+  res.send(layout({ title: p.name, desc: plain, image: imgs[0], nav: 'product', currentCat: p.category, track, body: `<div class="sp">
     <div class="gal"><div class="mi">${imgs[0] ? `<img id="mimg" src="${esc(imgs[0])}" alt="${esc(p.name)}" fetchpriority="high">` : '<div class="noimg" style="height:100%">📦</div>'}
       ${p.stock > 0 ? '<span class="stk">✅ En stock</span>' : ''}${off ? `<span class="spc">-${off}%</span>` : ''}</div>
       ${imgs.length > 1 ? `<div class="th">${imgs.map((u, i) => `<button type="button" class="${i ? '' : 'on'}" data-src="${esc(u)}" aria-label="Photo ${i + 1}"><img src="${esc(u)}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}</div>

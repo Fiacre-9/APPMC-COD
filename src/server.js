@@ -75,6 +75,8 @@ app.use((err, req, res, _next) => {
 
 // ---------- Tâches planifiées ----------
 cron.schedule('*/10 * * * *', () => S.runDelayedAutomations());
+// Catalogue Meta : resynchronisation complète chaque heure (stock, prix) si la connexion API est configurée
+cron.schedule('17 * * * *', () => { const m = require('./meta'), c = m.cfg(); if (c.autosync && c.catalog && c.token) m.sync().catch(e => console.error('[meta]', e.message)); });
 cron.schedule('*/5 * * * *', async () => {
   if (!conn.woo.enabled()) return;
   try { await S.pullOrders(); await S.pushUnsynced(); } catch (e) { console.error('[sync]', e.message); }

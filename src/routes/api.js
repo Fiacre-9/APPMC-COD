@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const crypto = require('crypto');
-const { db, STATUSES, getSetting, setSetting } = require('../db');
+const { db, STATUSES, getSetting, setSetting, categories } = require('../db');
 const S = require('../services');
 const conn = require('../connectors');
 const push = require('../push');
+const meta = require('../meta');
 
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
@@ -13,12 +14,13 @@ function crud(table, fields) {
   router.post(`/${table}`, wrap((req, res) => {
     const d = pick(req.body, fields); const k = Object.keys(d);
     const id = db.prepare(`INSERT INTO ${table}(${k}) VALUES(${k.map(() => '?')})`).run(...Object.values(d)).lastInsertRowid;
-    if (table === 'products') S.productSlug(id); // adresse de la page produit /p/...
+    if (table === 'products') { S.productSlug(id); meta.scheduleSync(); } // adresse de la page produit /p/... + catalogue Meta
     res.json({ id });
   }));
   router.put(`/${table}/:id`, wrap((req, res) => {
     const d = pick(req.body, fields); const k = Object.keys(d);
     if (k.length) db.prepare(`UPDATE ${table} SET ${k.map(x => x + '=?')} WHERE id=?`).run(...Object.values(d), req.params.id);
+    if (table === 'products') meta.scheduleSync();
     res.json({ ok: true });
   }));
   router.delete(`/${table}/:id`, (req, res) => { db.prepare(`DELETE FROM ${table} WHERE id=?`).run(req.params.id); res.json({ ok: true }); });
@@ -119,7 +121,7 @@ router.get('/vendors', (req, res) => res.json(db.prepare(`SELECT v.id, v.shop_na
   (SELECT COALESCE(SUM(amount),0) FROM orders WHERE vendor_id=v.id AND status IN ('livre','paye')) ca
   FROM vendors v ORDER BY v.id DESC`).all()));
 router.put('/vendors/:id', wrap((req, res) => {
-  db.prepare('UPDATE vendors SET active=? WHERE id=?').run(req.body.active ? 1 : 0, req.params.id); res.json({ ok: true });
+  db.prepare('UPDATE vendors SET active=? WHERE id=?').run(req.body.active ? 1 : 0, req.params.id); meta.scheduleSync(); res.json({ ok: true });
 }));
 crud('channels', ['name']);
 router.get('/stock-moves', (req, res) => res.json(db.prepare(`SELECT m.*, p.name FROM stock_moves m LEFT JOIN products p ON p.id=m.product_id
@@ -171,6 +173,54 @@ router.put('/settings', wrap((req, res) => {
   SETTINGS.forEach(k => req.body[k] !== undefined && setSetting(k, req.body[k])); res.json({ ok: true });
 }));
 router.get('/meta', (req, res) => res.json({ statuses: STATUSES, currency: process.env.CURRENCY || '$', connectors: conn.status() }));
+
+// ---------- Marketing : catégories + Meta (Facebook / Instagram) ----------
+router.get('/categories', (req, res) => res.json(db.prepare(`SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category=c.slug) products
+  FROM categories c ORDER BY c.position, c.id`).all()));
+const catFields = (b) => pick(b, ['name', 'icon', 'google_category', 'position']);
+router.post('/categories', wrap((req, res) => {
+  const name = String(req.body.name || '').trim(); if (!name) throw new Error('Nom de catégorie obligatoire');
+  let slug = S.slugify(name), i = 1; while (db.prepare('SELECT 1 FROM categories WHERE slug=?').get(slug)) slug = `${S.slugify(name)}-${++i}`;
+  const pos = db.prepare('SELECT COALESCE(MAX(position),0)+1 p FROM categories').get().p;
+  db.prepare('INSERT INTO categories(slug,name,icon,google_category,position) VALUES(?,?,?,?,?)')
+    .run(slug, name, String(req.body.icon || '📦').slice(0, 8), String(req.body.google_category || '').slice(0, 250), pos);
+  res.json({ slug });
+}));
+router.put('/categories/:slug', wrap((req, res) => {
+  const d = catFields(req.body); if (d.name !== undefined && !String(d.name).trim()) throw new Error('Nom de catégorie obligatoire');
+  const k = Object.keys(d); if (k.length) db.prepare(`UPDATE categories SET ${k.map(x => x + '=?')} WHERE slug=?`).run(...Object.values(d), req.params.slug);
+  meta.scheduleSync(); res.json({ ok: true });
+}));
+router.delete('/categories/:slug', wrap((req, res) => {
+  // Les produits de la catégorie supprimée restent en ligne, sans catégorie
+  db.prepare("UPDATE products SET category='' WHERE category=?").run(req.params.slug);
+  db.prepare('DELETE FROM categories WHERE slug=?').run(req.params.slug); meta.scheduleSync(); res.json({ ok: true });
+}));
+
+const META_PUBLIC = ['meta_pixel_id', 'meta_catalog_id', 'currency_code', 'meta_brand', 'meta_autosync'];
+router.get('/marketing', (req, res) => {
+  const { items, skipped } = meta.catalogItems();
+  res.json({ ...Object.fromEntries(META_PUBLIC.map(k => [k, getSetting(k)])), meta_autosync: getSetting('meta_autosync', '1'),
+    token_set: !!getSetting('meta_access_token'), capi_token_set: !!getSetting('meta_capi_token'),
+    last_sync: JSON.parse(getSetting('meta_last_sync', 'null')), base_url: process.env.BASE_URL || '',
+    stats: { eligible: items.length, in_stock: items.filter(i => i.availability === 'in stock').length,
+      no_category: items.filter(i => !i.google_product_category).length, skipped },
+    categories: categories(), channels: db.prepare('SELECT * FROM channels ORDER BY id').all() });
+});
+router.put('/marketing', wrap((req, res) => {
+  const b = req.body;
+  if (b.meta_pixel_id !== undefined && b.meta_pixel_id && !/^\d{5,20}$/.test(b.meta_pixel_id)) throw new Error('Identifiant du Pixel : chiffres uniquement');
+  if (b.meta_catalog_id !== undefined && b.meta_catalog_id && !/^\d{5,20}$/.test(b.meta_catalog_id)) throw new Error('Identifiant du catalogue : chiffres uniquement');
+  if (b.currency_code !== undefined && !/^[A-Za-z]{3}$/.test(b.currency_code)) throw new Error('Devise : code ISO à 3 lettres (USD, CDF, EUR, XOF…)');
+  if (b.currency_code) b.currency_code = String(b.currency_code).toUpperCase();
+  META_PUBLIC.forEach(k => b[k] !== undefined && setSetting(k, String(b[k]).trim()));
+  // Clés secrètes : jamais relues par le navigateur ; « - » pour effacer
+  ['meta_access_token', 'meta_capi_token'].forEach(k => { if (b[k]) setSetting(k, b[k] === '-' ? '' : String(b[k]).trim()); });
+  res.json({ ok: true });
+}));
+router.post('/marketing/test', wrap(async (req, res) => res.json(await meta.test())));
+router.post('/marketing/sync', wrap(async (req, res) => res.json(await meta.sync())));
+router.post('/marketing/product-sets', wrap(async (req, res) => res.json(await meta.createProductSets())));
 
 router.post('/push/subscribe', wrap((req, res) => { push.subscribe(req.body.subscription, 'admin', null); res.json({ ok: true }); }));
 

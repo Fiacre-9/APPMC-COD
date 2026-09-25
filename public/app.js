@@ -32,7 +32,7 @@ async function logout() { await api('/auth/logout', 'POST'); showLogin(); }
 const PAGES = {
   dashboard: ['📊 Tableau de bord', dashboard], orders: ['📦 Commandes COD', orders], crm: ['👥 CRM Clients', crm],
   vendors: ['🏪 Vendeurs', vendors], agents: ['☎️ Agents', agents], couriers: ['🚚 Livreurs', couriers], stock: ['🏷️ Stock', stock], channels: ['📣 Canaux de vente', channels],
-  stats: ['📈 Statistiques', stats], kanban: ['🗂️ Pipeline Kanban', kanban], automations: ['⚡ Automatisations', automations],
+  marketing: ['📣 Marketing', marketing], stats: ['📈 Statistiques', stats], kanban: ['🗂️ Pipeline Kanban', kanban], automations: ['⚡ Automatisations', automations],
   tracking: ['📍 Tracking GPS', tracking], sync: ['🔄 Synchronisation', sync], settings: ['⚙️ Paramètres', settings],
 };
 function go(p) { location.hash = p; }
@@ -224,6 +224,95 @@ async function vendors(v) {
     <td>${esc(x.email)}<br>${esc(x.phone)}</td><td>${x.products}</td><td>${x.orders}</td><td>${money(x.ca)}</td>
     <td>${x.active ? '✅ Actif' : '⛔ Suspendu'}<br><button class="sm gray" onclick="api('/api/vendors/${x.id}','PUT',{active:${x.active ? 0 : 1}}).then(route)">
     ${x.active ? 'Suspendre' : 'Réactiver'}</button></td></tr>`).join('') || '<tr><td colspan=6 class="mut">Aucun vendeur inscrit</td></tr>'}</table></div>`;
+}
+
+// ---------- Marketing : catégories + Meta (Facebook / Instagram) ----------
+const GOOGLE_CATS = ['Apparel & Accessories', 'Apparel & Accessories > Clothing', 'Apparel & Accessories > Shoes', 'Apparel & Accessories > Handbags, Wallets & Cases',
+  'Apparel & Accessories > Jewelry', 'Apparel & Accessories > Clothing Accessories', 'Health & Beauty > Personal Care > Cosmetics', 'Health & Beauty > Personal Care',
+  'Health & Beauty > Health Care', 'Electronics', 'Electronics > Communications > Telephony > Mobile Phones', 'Home & Garden', 'Home & Garden > Kitchen & Dining',
+  'Home & Garden > Decor', 'Baby & Toddler', 'Toys & Games', 'Sporting Goods', 'Food, Beverages & Tobacco > Food Items', 'Vehicles & Parts', 'Furniture', 'Hardware'];
+async function marketing(v) {
+  const [m, cats] = await Promise.all([api('/api/marketing'), api('/api/categories')]);
+  const base = m.base_url || location.origin, feed = `${base}/feeds/meta.csv`, ls = m.last_sync;
+  const utm = (canal, camp) => `${base}/boutique?canal=${canal}&utm_source=facebook&utm_medium=paid&utm_campaign=${encodeURIComponent(camp)}`;
+  v.innerHTML = `<datalist id="gcats">${GOOGLE_CATS.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+  <div class="grid">
+    <div class="card kpi"><b>${m.stats.eligible}</b><span>Produits envoyables à Meta</span></div>
+    <div class="card kpi"><b>${m.stats.in_stock}</b><span>En stock (diffusables en pub)</span></div>
+    <div class="card kpi"><b>${m.stats.skipped.length}</b><span>Exclus (sans photo…)</span></div>
+    <div class="card kpi"><b>${ls ? (ls.ok ? '✅' : '❌') : '—'}</b><span>${ls ? 'Synchro ' + new Date(ls.at).toLocaleString('fr-FR') : 'Jamais synchronisé'}</span></div></div>
+  ${!m.base_url ? '<div class="card err">⚠️ Variable BASE_URL absente sur le serveur : les liens produits envoyés à Meta seraient incomplets.</div>' : ''}
+
+  <div class="card"><h3>🔗 Connexion Meta (Facebook / Instagram)</h3>
+  <p class="mut">Gestionnaire d'événements → Pixel (ID) · Gestionnaire de ventes → Catalogue (ID) · Paramètres de l'entreprise → Utilisateurs système →
+    Générer un jeton avec les autorisations <code>catalog_management</code> et <code>ads_management</code>.</p>
+  <form class="f" id="metaf" onsubmit="event.preventDefault();saveMeta(this)">
+    <div class="row"><label>ID du Pixel<input name="meta_pixel_id" inputmode="numeric" value="${esc(m.meta_pixel_id)}" placeholder="123456789012345"></label>
+      <label>ID du catalogue<input name="meta_catalog_id" inputmode="numeric" value="${esc(m.meta_catalog_id)}" placeholder="987654321098765"></label></div>
+    <label>Jeton d'accès (utilisateur système)<input name="meta_access_token" type="password" autocomplete="off"
+      placeholder="${m.token_set ? '✅ Enregistré — laisser vide pour le garder, « - » pour l’effacer' : 'EAAB…'}"></label>
+    <label>Jeton API Conversions (facultatif, sinon le jeton ci-dessus)<input name="meta_capi_token" type="password" autocomplete="off"
+      placeholder="${m.capi_token_set ? '✅ Enregistré' : 'Gestionnaire d’événements → Paramètres → Générer un jeton'}"></label>
+    <div class="row"><label>Devise (ISO)<input name="currency_code" maxlength="3" value="${esc(m.currency_code || 'USD')}" placeholder="USD, CDF, XOF…"></label>
+      <label>Marque par défaut<input name="meta_brand" value="${esc(m.meta_brand)}" placeholder="Mireb"></label></div>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="meta_autosync" style="width:auto" ${m.meta_autosync === '1' ? 'checked' : ''}>
+      Synchroniser automatiquement le catalogue (à chaque modification de produit + chaque heure)</label>
+    <div class="row"><button>Enregistrer</button><button type="button" class="gray" onclick="metaAction('test')">🔌 Tester la connexion</button></div></form></div>
+
+  <div class="card"><h3>🛍️ Catalogue produits</h3>
+    <p><b>Option 1 — Flux automatique (le plus simple, sans jeton)</b> : Gestionnaire de ventes → Catalogue → Sources de données →
+      Ajouter des articles → <i>Flux de données</i> → <i>Programmé</i> → coller cette adresse, fréquence <b>toutes les heures</b> :</p>
+    <p><code>${esc(feed)}</code> <button class="sm" onclick="navigator.clipboard.writeText('${esc(feed)}').then(()=>toast('Copié'))">Copier</button>
+      <a class="btn sm gray" href="/feeds/meta.csv" target="_blank" style="padding:4px 8px;font-size:12px">Voir</a></p>
+    <p><b>Option 2 — Synchronisation directe (API)</b> : envoie tout de suite les produits, prix, stocks et photos, et retire les produits masqués.</p>
+    <div class="row"><button onclick="metaAction('sync')">🔄 Synchroniser maintenant</button>
+      <button class="gray" onclick="metaAction('product-sets')">🧩 Créer les ensembles de produits par catégorie</button></div>
+    ${ls && !ls.ok ? `<p class="err">Dernière erreur : ${esc(ls.error)}</p>` : ''}
+    ${ls && ls.ok ? `<p class="mut">Dernier envoi : ${ls.sent} produits, ${ls.deleted} retirés.</p>` : ''}
+    ${m.stats.skipped.length ? `<details><summary>${m.stats.skipped.length} produit(s) non envoyé(s)</summary>${m.stats.skipped.map(s => `<div>#${s.id} ${esc(s.name)} — <span class="err">${esc(s.reason)}</span></div>`).join('')}</details>` : ''}
+    ${m.stats.no_category ? `<p class="mut">⚠️ ${m.stats.no_category} produit(s) sans catégorie Google : Meta les classera moins bien.</p>` : ''}</div>
+
+  <div class="card"><h3>🏷️ Catégories (boutique + Meta)</h3>
+    <p class="mut">Chaque catégorie apparaît dans la boutique et chez les vendeurs. La <b>catégorie Google</b> est transmise à Meta
+      (<code>google_product_category</code>) ; chaque catégorie devient un <b>ensemble de produits</b> pour vos campagnes.</p>
+    <div class="tw"><table><tr><th>Icône</th><th>Nom</th><th>Catégorie Google / Meta</th><th>Produits</th><th></th></tr>
+    ${cats.map(c => `<tr><td><input value="${esc(c.icon)}" style="width:52px;text-align:center" id="ci-${c.slug}"></td>
+      <td><input value="${esc(c.name)}" id="cn-${c.slug}"></td>
+      <td><input list="gcats" value="${esc(c.google_category)}" id="cg-${c.slug}" placeholder="ex : Apparel & Accessories > Shoes"></td>
+      <td>${c.products}</td><td style="white-space:nowrap"><button class="sm" onclick="saveCat('${c.slug}')">💾</button>
+      <button class="sm gray" onclick="delCat('${c.slug}',${c.products})">🗑</button></td></tr>`).join('')}</table></div>
+    <form class="row" style="margin-top:10px" onsubmit="event.preventDefault();api('/api/categories','POST',formData(this)).then(()=>{toast('Catégorie ajoutée');route()})">
+      <input name="icon" placeholder="🎁" style="flex:0 0 60px;text-align:center"><input name="name" placeholder="Nouvelle catégorie" required>
+      <input name="google_category" list="gcats" placeholder="Catégorie Google (facultatif)"><button>+ Ajouter</button></form></div>
+
+  <div class="card"><h3>🚀 Créer une campagne catalogue (Advantage+)</h3><ol>
+    <li>Connectez le catalogue ci-dessus (flux ou synchronisation) et le <b>Pixel</b> (il envoie <i>ViewContent</i> sur chaque page produit et <i>Purchase</i> à chaque commande, aussi par l'API Conversions).</li>
+    <li>Gestionnaire de ventes → Catalogue → <b>Événements</b> : reliez le Pixel au catalogue (les <code>content_ids</code> correspondent aux ID produits).</li>
+    <li>Gestionnaire de publicités → <b>Créer</b> → objectif <b>Ventes</b> → <b>Campagne catalogue Advantage+</b> → choisissez le catalogue puis un <b>ensemble de produits</b> (une catégorie ou « Promotions »).</li>
+    <li>Optimisation : <b>Achat</b> (Purchase). Chaque commande passée depuis la pub est comptée et suivie par canal.</li></ol>
+    <p><b>Liens de suivi pour vos pubs</b> (les commandes apparaissent par canal dans Statistiques) :</p>
+    ${m.channels.length ? m.channels.map(ch => `<div style="margin:6px 0"><b>${esc(ch.name)}</b> : <code>${esc(utm(ch.id, ch.name))}</code></div>`).join('')
+      : '<p class="mut">Créez d\'abord un canal (ex : « Facebook Ads ») dans 📣 Canaux de vente.</p>'}</div>`;
+}
+async function saveMeta(f) {
+  const d = formData(f); d.meta_autosync = f.meta_autosync.checked ? '1' : '0';
+  if (!d.meta_access_token) delete d.meta_access_token; if (!d.meta_capi_token) delete d.meta_capi_token;
+  await api('/api/marketing', 'PUT', d); toast('Enregistré'); route();
+}
+async function metaAction(a) {
+  toast('Envoi à Meta…');
+  const r = await api('/api/marketing/' + a, 'POST');
+  if (a === 'test') toast(`✅ Catalogue « ${r.catalog.name} » (${r.catalog.product_count} produits)${r.pixel ? r.pixel.error ? ' · Pixel : ' + r.pixel.error : ' · Pixel « ' + r.pixel.name + ' »' : ''}`);
+  if (a === 'sync') { toast(`✅ ${r.sent} produits envoyés, ${r.deleted} retirés`); route(); }
+  if (a === 'product-sets') toast(`✅ ${r.created.length} ensemble(s) créé(s), ${r.existing} déjà présent(s)`);
+}
+async function saveCat(slug) {
+  await api('/api/categories/' + slug, 'PUT', { icon: $('#ci-' + slug).value, name: $('#cn-' + slug).value, google_category: $('#cg-' + slug).value });
+  toast('Catégorie enregistrée');
+}
+async function delCat(slug, n) {
+  if (!confirm(n ? `${n} produit(s) resteront en ligne sans catégorie. Supprimer ?` : 'Supprimer cette catégorie ?')) return;
+  await api('/api/categories/' + slug, 'DELETE'); route();
 }
 
 // ---------- Canaux ----------

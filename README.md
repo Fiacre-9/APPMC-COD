@@ -77,6 +77,14 @@ Synchronisation automatique également toutes les 5 min.
 - Fichiers : `src/routes/pwa.js` (manifestes), `public/sw.js` (service worker), `public/pwa.js` (bouton/guide d'installation), `public/icons/`.
 - Après une modification des fichiers du site, augmenter `VERSION` dans `public/sw.js` pour vider les anciens caches.
 
+## Marketing Meta (Facebook / Instagram) — Admin → 📣 Marketing
+- **Catégories** gérées par l'admin (icône, nom, catégorie Google transmise à Meta) : utilisées par la boutique, les vendeurs et le catalogue.
+- **Catalogue** : flux programmé `https://votre-app/feeds/meta.csv` (Gestionnaire de ventes, toutes les heures, sans jeton) **ou** synchronisation directe par l'API (bouton + automatique à chaque modification de produit + chaque heure ; les produits masqués sont retirés).
+- **Ensembles de produits** créés automatiquement : un par catégorie (`custom_label_0`) + « Promotions » (`custom_label_2 = promo`) → pour les campagnes catalogue Advantage+.
+- **Pixel** : PageView, ViewContent (page produit, `content_ids` = ID catalogue) et Purchase (commande) ; **API Conversions** côté serveur avec le même `event_id` (dédupliqué), téléphone/prénom/ville hachés en SHA-256.
+- Jeton d'accès (utilisateur système, `catalog_management` + `ads_management`) stocké côté serveur, jamais renvoyé au navigateur.
+- Produits exclus du catalogue : sans photo ; stock 0 = « out of stock » (non diffusé en pub). `BASE_URL` doit être défini.
+
 ## Notifications push
 | Qui | Quand | Activation |
 |---|---|---|

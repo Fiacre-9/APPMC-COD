@@ -2,10 +2,11 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { db, STATUSES, CATEGORIES } = require('../db');
+const { db, STATUSES, categories } = require('../db');
 const S = require('../services');
 const { saveImage } = require('../uploads');
 const push = require('../push');
+const meta = require('../meta');
 
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
@@ -46,7 +47,7 @@ module.exports = (SECRET) => {
     if (!p) throw new Error('Produit introuvable'); return p;
   };
 
-  router.get('/api/me', (req, res) => res.json({ ...req.vendor, statuses: STATUSES, categories: CATEGORIES, currency: process.env.CURRENCY || '$' }));
+  router.get('/api/me', (req, res) => res.json({ ...req.vendor, statuses: STATUSES, categories: categories(), currency: process.env.CURRENCY || '$' }));
   router.put('/api/me', wrap((req, res) => {
     const d = pick(req.body, ['shop_name', 'phone', 'whatsapp', 'description']); const k = Object.keys(d);
     if (k.length) db.prepare(`UPDATE vendors SET ${k.map(x => x + '=?')} WHERE id=?`).run(...Object.values(d), req.vendor.id);
@@ -79,28 +80,28 @@ module.exports = (SECRET) => {
     d.gallery = JSON.stringify(all); d.image = all[0] || '';
   }
   const photosOf = p => { try { const g = JSON.parse(p.gallery || '[]'); return g.length ? g : (p.image ? [p.image] : []); } catch { return []; } };
-  const checkCat = d => { if (d.category && !CATEGORIES.some(c => c.slug === d.category)) throw new Error('Catégorie inconnue'); };
+  const checkCat = d => { if (d.category && !categories().some(c => c.slug === d.category)) throw new Error('Catégorie inconnue'); };
   router.get('/api/products', (req, res) => res.json(db.prepare('SELECT * FROM products WHERE vendor_id=? ORDER BY id DESC').all(req.vendor.id)));
   router.post('/api/products', wrap((req, res) => {
     if (!req.body.name) throw new Error('Nom du produit obligatoire');
     const d = pick(req.body, FIELDS); checkCat(d); applyPhotos(req.body, d);
     d.vendor_id = req.vendor.id; const k = Object.keys(d);
     const id = db.prepare(`INSERT INTO products(${k}) VALUES(${k.map(() => '?')})`).run(...Object.values(d)).lastInsertRowid;
-    S.productSlug(id); res.json({ id });
+    S.productSlug(id); meta.scheduleSync(); res.json({ id });
   }));
   router.put('/api/products/:id', wrap((req, res) => {
     const p = own(req); const d = pick(req.body, FIELDS); checkCat(d); applyPhotos(req.body, d, photosOf(p));
     const k = Object.keys(d);
     if (k.length) db.prepare(`UPDATE products SET ${k.map(x => x + '=?')} WHERE id=?`).run(...Object.values(d), p.id);
     if (d.name && d.name !== p.name) S.productSlug(p.id);
-    res.json({ ok: true });
+    meta.scheduleSync(); res.json({ ok: true });
   }));
   router.delete('/api/products/:id', wrap((req, res) => {
     const p = own(req);
     // Un produit déjà commandé est masqué plutôt que supprimé, pour garder l'historique
     if (db.prepare('SELECT 1 FROM orders WHERE product_id=?').get(p.id)) db.prepare('UPDATE products SET active=0 WHERE id=?').run(p.id);
     else db.prepare('DELETE FROM products WHERE id=?').run(p.id);
-    res.json({ ok: true });
+    meta.scheduleSync(); res.json({ ok: true });
   }));
 
   router.post('/api/push/subscribe', wrap((req, res) => { push.subscribe(req.body.subscription, 'vendor', req.vendor.id); res.json({ ok: true }); }));

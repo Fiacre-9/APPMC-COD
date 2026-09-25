@@ -25,6 +25,11 @@ router.get('/.well-known/assetlinks.json', (req, res) => {
     target: { namespace: 'android_app', package_name: a.pkg, sha256_cert_fingerprints: a.fps } })));
 });
 
+// Flux catalogue pour Meta (Gestionnaire de ventes → Source de données → Flux programmé)
+router.get('/feeds/meta.csv', (req, res) => {
+  res.type('text/csv; charset=utf-8').set('Cache-Control', 'public, max-age=600').send(require('../meta').feedCsv());
+});
+
 router.get('/manifests/:app.json', (req, res) => {
   const shop = getSetting('shop_name', '') || 'Mireb';
   // Le lien personnel du livreur est gardé dans l'app installée (iOS n'y partage pas les données de Safari)

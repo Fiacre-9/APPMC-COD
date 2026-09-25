@@ -22,13 +22,6 @@ const db = {
   },
 };
 
-// Catégories de la boutique (icônes comme le thème Mireb COD)
-const CATEGORIES = [
-  ['mode', 'Mode', '👗'], ['chaussures', 'Chaussures', '👟'], ['beaute', 'Beauté', '💄'], ['sante', 'Santé', '💊'],
-  ['electronique', 'Électronique', '📱'], ['maison', 'Maison', '🏠'], ['cuisine', 'Cuisine', '🍳'], ['enfants', 'Enfants', '🧸'],
-  ['sport', 'Sport', '⚽'], ['accessoires', 'Accessoires', '👜'], ['alimentation', 'Alimentation', '🛒'], ['autres', 'Autres', '📦'],
-].map(([slug, name, icon]) => ({ slug, name, icon }));
-
 const STATUSES = ['nouveau', 'en_confirmation', 'confirme', 'en_preparation', 'expedie',
   'en_livraison', 'livre', 'paye', 'annule', 'retourne'];
 
@@ -59,6 +52,8 @@ CREATE TABLE IF NOT EXISTS vendors (id INTEGER PRIMARY KEY, shop_name TEXT, slug
 CREATE TABLE IF NOT EXISTS push_subs (id INTEGER PRIMARY KEY, endpoint TEXT UNIQUE, p256dh TEXT, auth TEXT,
   role TEXT, ref_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE INDEX IF NOT EXISTS push_subs_role ON push_subs(role, ref_id);
+CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY, slug TEXT UNIQUE, name TEXT, icon TEXT DEFAULT '📦',
+  google_category TEXT DEFAULT '', position INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS automation_log (id INTEGER PRIMARY KEY, automation_id INTEGER, order_id INTEGER, ok INTEGER, info TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(automation_id, order_id));
 `);
@@ -79,7 +74,20 @@ addCol('products', 'gallery', "TEXT DEFAULT '[]'");
 addCol('orders', 'vendor_id', 'INTEGER');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS products_slug ON products(slug)');
 
+// Catégories de la boutique (gérées dans Admin → Marketing). google_category = taxonomie Google, reconnue par Meta.
+if (!db.prepare('SELECT COUNT(*) n FROM categories').get().n) {
+  const ins = db.prepare('INSERT INTO categories(slug,name,icon,google_category,position) VALUES(?,?,?,?,?)');
+  [['mode', 'Mode', '👗', 'Apparel & Accessories > Clothing'], ['chaussures', 'Chaussures', '👟', 'Apparel & Accessories > Shoes'],
+    ['beaute', 'Beauté', '💄', 'Health & Beauty > Personal Care > Cosmetics'], ['sante', 'Santé', '💊', 'Health & Beauty > Health Care'],
+    ['electronique', 'Électronique', '📱', 'Electronics'], ['maison', 'Maison', '🏠', 'Home & Garden'],
+    ['cuisine', 'Cuisine', '🍳', 'Home & Garden > Kitchen & Dining'], ['enfants', 'Enfants', '🧸', 'Toys & Games'],
+    ['sport', 'Sport', '⚽', 'Sporting Goods'], ['accessoires', 'Accessoires', '👜', 'Apparel & Accessories > Clothing Accessories'],
+    ['alimentation', 'Alimentation', '🛒', 'Food, Beverages & Tobacco > Food Items'], ['autres', 'Autres', '📦', ''],
+  ].forEach((c, i) => ins.run(...c, i));
+}
+const categories = () => db.prepare('SELECT slug, name, icon, google_category FROM categories ORDER BY position, id').all();
+
 const getSetting = (k, d = '') => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value ?? d;
 const setSetting = (k, v) => db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v));
 
-module.exports = { db, STATUSES, CATEGORIES, getSetting, setSetting };
+module.exports = { db, STATUSES, categories, getSetting, setSetting };
