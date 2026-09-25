@@ -1,12 +1,26 @@
-const Database = require('better-sqlite3');
+// SQLite intégré à Node (>= 22.13) : aucune compilation native, fonctionne sur l'hébergement mutualisé Hostinger
+const { DatabaseSync } = require('node:sqlite');
 const fs = require('fs');
 const path = require('path');
 
 const dir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 fs.mkdirSync(dir, { recursive: true });
-const db = new Database(path.join(dir, 'mireb.db'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const raw = new DatabaseSync(path.join(dir, 'mireb.db'));
+raw.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+
+// Couche compatible avec l'API better-sqlite3 utilisée dans le projet (prepare/get/all/run, transaction)
+const norm = args => args.map(v => v === undefined ? null : typeof v === 'boolean' ? +v : v);
+const db = {
+  exec: sql => raw.exec(sql),
+  prepare(sql) {
+    const st = raw.prepare(sql);
+    return { get: (...a) => st.get(...norm(a)), all: (...a) => st.all(...norm(a)), run: (...a) => st.run(...norm(a)) };
+  },
+  transaction: fn => (...a) => {
+    raw.exec('BEGIN');
+    try { const r = fn(...a); raw.exec('COMMIT'); return r; } catch (err) { raw.exec('ROLLBACK'); throw err; }
+  },
+};
 
 const STATUSES = ['nouveau', 'en_confirmation', 'confirme', 'en_preparation', 'expedie',
   'en_livraison', 'livre', 'paye', 'annule', 'retourne'];

@@ -4,15 +4,14 @@
   "description": "Mireb COD — application Node.js de gestion des commandes Cash-on-Delivery",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node --no-warnings=ExperimentalWarning src/server.js",
     "dev": "node --watch src/server.js",
     "build": "echo build ok"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13"
   },
   "dependencies": {
-    "better-sqlite3": "^11.3.0",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",

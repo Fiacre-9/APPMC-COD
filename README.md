@@ -52,7 +52,7 @@ WooCommerce → Réglages → Avancé → Webhooks → sujet « Commande créée
 Synchronisation automatique également toutes les 5 min.
 
 ## Déploiement (Hostinger / VPS)
-Node ≥ 18, commande de démarrage `npm start`, variables d'environnement à définir dans le panneau (ne pas committer `.env`).
+Node ≥ 22.13 (SQLite intégré `node:sqlite`, aucune compilation native), commande de démarrage `npm start`, variables d'environnement à définir dans le panneau (ne pas committer `.env`).
 
 ## Structure
 ```
