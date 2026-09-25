@@ -72,6 +72,13 @@ addCol('products', 'category', "TEXT DEFAULT ''");
 addCol('products', 'short_description', "TEXT DEFAULT ''");
 addCol('products', 'gallery', "TEXT DEFAULT '[]'");
 addCol('orders', 'vendor_id', 'INTEGER');
+// Date d'ajout des produits (section « Nouveautés ») : remplie automatiquement à chaque création, quel que soit l'auteur
+if (!db.prepare('PRAGMA table_info(products)').all().some(x => x.name === 'created_at')) {
+  db.exec('ALTER TABLE products ADD COLUMN created_at TEXT');
+  db.exec("UPDATE products SET created_at=datetime('now','-30 days')"); // produits existants : pas marqués « nouveaux »
+}
+db.exec(`CREATE TRIGGER IF NOT EXISTS products_created_at AFTER INSERT ON products WHEN NEW.created_at IS NULL
+  BEGIN UPDATE products SET created_at=CURRENT_TIMESTAMP WHERE id=NEW.id; END`);
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS products_slug ON products(slug)');
 
 // Catégories de la boutique (gérées dans Admin → Marketing). google_category = taxonomie Google, reconnue par Meta.

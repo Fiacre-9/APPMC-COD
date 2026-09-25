@@ -70,7 +70,9 @@ a{color:inherit;text-decoration:none}img{max-width:100%;display:block}
 @keyframes pulse{0%,100%{box-shadow:0 2px 8px rgba(232,52,42,.3)}50%{box-shadow:0 4px 14px rgba(232,52,42,.5)}}
 .empty{text-align:center;color:var(--g);padding:40px 16px;background:#fff}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:10px 12px;background:#fff;border-bottom:1px solid var(--b);scrollbar-width:none}
-.chips a{flex-shrink:0;padding:6px 12px;border:1px solid var(--b);border-radius:99px;font-size:12px;font-weight:600;color:var(--g)}.chips a.on{background:var(--p);border-color:var(--p);color:#fff}
+.sort{border:1px solid var(--b);border-radius:8px;padding:5px 8px;font:inherit;font-size:12px;background:#fff;margin-left:8px;max-width:150px}
+.sh>span.sc{margin-left:auto}.allbtn{background:#fff;padding:16px;text-align:center;margin:8px 0}.allbtn .btn{justify-content:center;width:100%;max-width:420px}
+.chips small{opacity:.7;font-weight:500}.chips a{flex-shrink:0;padding:6px 12px;border:1px solid var(--b);border-radius:99px;font-size:12px;font-weight:600;color:var(--g)}.chips a.on{background:var(--p);border-color:var(--p);color:#fff}
 .vhead{background:#fff;padding:18px 14px;border-bottom:1px solid var(--b);display:flex;gap:12px;align-items:center}
 .vav{width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--pd));color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;flex-shrink:0}
 .vhead h1{margin:0;font-size:1.2rem}.vhead p{margin:4px 0 0;color:var(--g);font-size:13px}
@@ -157,11 +159,14 @@ ${catbar}<main class="wrap">${body}</main>
 <footer class="ft"><b>${esc(name)}</b><br>Commandez en ligne, payez à la livraison.<br><br><a href="/suivi">Suivre ma commande</a> · <a href="/vendeur/#inscription">Vendre sur ${esc(name)}</a> · <a href="/confidentialite">Confidentialité</a>
 <br><br><button type="button" class="btn r" data-pwa-install hidden>📲 Installer l'application</button></footer>
 <nav class="bn" aria-label="Navigation">${bn('home', '/boutique', '🏠', 'Maison')}${bn('cats', '/boutique#categories', '☰', 'Catégories')}
-${bn('', nav === 'product' ? '#mireb-commande" data-goto-form="1' : '/boutique#tous', '🛒', 'Commander', 'cmd')}${bn('suivi', '/suivi', '🚚', 'Suivi')}${bn('', '/vendeur/', '👤', 'Vendre')}</nav>
+${bn('', nav === 'product' ? '#mireb-commande" data-goto-form="1' : '/boutique?tout=1', '🛒', 'Commander', 'cmd')}${bn('suivi', '/suivi', '🚚', 'Suivi')}${bn('', '/vendeur/', '👤', 'Vendre')}</nav>
 <script>${JS}</script><script src="/pwa.js" data-app="${esc(name)}" data-color="#E8342A" data-icon="/icons/boutique-192.png" data-offset="76"${nav === 'product' ? ' data-auto="0"' : ''}></script></body></html>`;
 }
 
-function card(p, isNew = false) {
+const NEW_DAYS = 14;
+const newSince = () => new Date(Date.now() - NEW_DAYS * 864e5).toISOString().slice(0, 19).replace('T', ' ');
+const isNewP = (p, since = newSince()) => (p.created_at || '') >= since;
+function card(p, isNew = isNewP(p)) {
   const off = pct(p), img = photos(p)[0];
   return `<div class="card"><a href="/p/${esc(p.slug)}"><div class="iw">${img ? `<img src="${esc(img)}" alt="${esc(p.name)}" loading="lazy" decoding="async">` : '<div class="noimg">📦</div>'}
     ${off ? `<span class="bdg">-${off}%</span>` : isNew ? '<span class="bdg new">NOUVEAU</span>' : ''}</div>
@@ -173,31 +178,63 @@ const grid = (list, empty = 'Aucun produit pour le moment.') => list.length ? `<
 const catGrid = () => `<div class="cats">${categories().map(c => `<a href="/boutique?cat=${c.slug}"><i>${c.icon}</i>${esc(c.name)}</a>`).join('')}</div>`;
 
 // ---------- Accueil boutique / recherche / catégorie ----------
+const SORTS = { recent: ['Nouveautés', 'p.id DESC'], prix_asc: ['Prix croissant', 'p.price ASC, p.id DESC'],
+  prix_desc: ['Prix décroissant', 'p.price DESC, p.id DESC'], promo: ['Meilleures promos', 'CASE WHEN p.compare_price>p.price THEN (p.compare_price-p.price)/p.compare_price ELSE 0 END DESC, p.id DESC'] };
+const plural = (n) => `${n} produit${n > 1 ? 's' : ''}`;
+
+// ---------- Liste : tous les produits / catégorie / recherche / promotions (tri + filtres) ----------
+function listing(req, res, CAT) {
+  const q = String(req.query.q || '').trim().slice(0, 80), cat = CAT[req.query.cat] ? req.query.cat : '';
+  const promo = req.query.promo === '1', sort = SORTS[req.query.tri] ? req.query.tri : (promo ? 'promo' : 'recent');
+  const w = [VISIBLE], a = [];
+  if (cat) { w.push('p.category=?'); a.push(cat); }
+  if (promo) w.push('p.compare_price>p.price');
+  if (q) { w.push('(p.name LIKE ? OR p.short_description LIKE ?)'); a.push(`%${q}%`, `%${q}%`); }
+  const list = db.prepare(`SELECT p.* ${FROM} WHERE ${w.join(' AND ')} ORDER BY ${SORTS[sort][1]} LIMIT 400`).all(...a);
+  // Liens qui gardent les autres filtres
+  const url = (over) => '/boutique?' + new URLSearchParams(Object.entries({ tout: '1', q, cat, promo: promo ? '1' : '', tri: sort === 'recent' ? '' : sort, ...over })
+    .filter(([, v]) => v)).toString();
+  const counts = Object.fromEntries(db.prepare(`SELECT p.category c, COUNT(*) n ${FROM} WHERE ${VISIBLE} GROUP BY p.category`).all().map(r => [r.c, r.n]));
+  const chips = `<div class="chips"><a href="${esc(url({ cat: '' }))}" class="${cat ? '' : 'on'}">Tout</a>
+    ${Object.values(CAT).filter(c => counts[c.slug]).map(c => `<a href="${esc(url({ cat: c.slug }))}" class="${cat === c.slug ? 'on' : ''}">${c.icon} ${esc(c.name)} <small>${counts[c.slug]}</small></a>`).join('')}
+    <a href="${esc(url({ promo: promo ? '' : '1' }))}" class="${promo ? 'on' : ''}">🏷️ Promos</a></div>`;
+  const sorter = `<select class="sort" aria-label="Trier" onchange="location.href=this.value">${Object.entries(SORTS).map(([k, [l]]) =>
+    `<option value="${esc(url({ tri: k === 'recent' ? '' : k }))}" ${k === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const title = q ? `Résultats pour « ${esc(q)} »` : cat ? `${CAT[cat].icon} ${esc(CAT[cat].name)}` : promo ? '🏷️ Promotions' : '🏪 Tous les produits';
+  res.send(layout({ title: `${q || (cat ? CAT[cat].name : promo ? 'Promotions' : 'Tous les produits')} — ${shopName()}`, active: 'cats', currentCat: cat,
+    body: chips + section(title, grid(list, q ? 'Aucun produit trouvé. Essayez un autre mot.' : 'Aucun produit pour le moment.'),
+      `<span class="sc">${plural(list.length)}</span>${sorter}`) }));
+}
+
+// ---------- Accueil : chaque produit n'apparaît qu'une fois (Nouveautés → Promotions → sa catégorie) ----------
 router.get('/boutique', (req, res) => {
-  const CAT = catMap(), q = String(req.query.q || '').trim().slice(0, 80), cat = CAT[req.query.cat] ? req.query.cat : '';
-  if (q || cat) {
-    const w = [VISIBLE], a = [];
-    if (cat) { w.push('p.category=?'); a.push(cat); }
-    if (q) { w.push('(p.name LIKE ? OR p.short_description LIKE ?)'); a.push(`%${q}%`, `%${q}%`); }
-    const list = db.prepare(`SELECT p.* ${FROM} WHERE ${w.join(' AND ')} ORDER BY p.id DESC LIMIT 200`).all(...a);
-    const title = cat ? `${CAT[cat].icon} ${CAT[cat].name}` : `Résultats pour « ${esc(q)} »`;
-    return res.send(layout({ title: `${cat ? CAT[cat].name : q} — ${shopName()}`, active: 'cats', currentCat: cat,
-      body: section(title, grid(list, 'Aucun produit trouvé. Essayez un autre mot.'), `<span class="sc">${list.length} produit${list.length > 1 ? 's' : ''}</span>`) }));
-  }
-  const all = db.prepare(`SELECT p.* ${FROM} WHERE ${VISIBLE} ORDER BY p.id DESC LIMIT 400`).all();
-  const promos = all.filter(p => pct(p) > 0).slice(0, 10), news = all.slice(0, 10);
-  const scroll = (list, isNew) => `<div class="scroll">${list.map(p => card(p, isNew)).join('')}</div>`;
+  const CAT = catMap();
+  if (req.query.q || req.query.cat || req.query.tout || req.query.promo) return listing(req, res, CAT);
+  const all = db.prepare(`SELECT p.* ${FROM} WHERE ${VISIBLE} ORDER BY p.id DESC LIMIT 1000`).all();
+  const shown = new Set(), take = (list, n) => { const out = list.filter(p => !shown.has(p.id)).slice(0, n); out.forEach(p => shown.add(p.id)); return out; };
+  const since = newSince();
+  const news = take(all.filter(p => isNewP(p, since)), 10);
+  const promos = take(all.filter(p => pct(p) > 0).sort((x, y) => pct(y) - pct(x)), 10);
+  const scroll = (list) => `<div class="scroll">${list.map(p => card(p)).join('')}</div>`;
+  const more = (href, n) => `<a class="sl" href="${href}">Voir tout${n ? ` (${n})` : ''}</a>`;
+  // Une rangée par catégorie avec les produits pas encore montrés ; « Voir tout » ouvre la catégorie complète
+  const rows = [...Object.values(CAT), { slug: '', name: 'Autres produits', icon: '📦' }].map(c => {
+    const items = all.filter(p => c.slug ? p.category === c.slug : !CAT[p.category]), rest = take(items, 10);
+    return rest.length ? section(`${c.icon} ${esc(c.name)}`, scroll(rest), c.slug ? more(`/boutique?cat=${c.slug}`, items.length) : more('/boutique?tout=1'), c.slug ? `cat-${c.slug}` : 'cat-autres') : '';
+  }).join('');
+  const nPromo = all.filter(p => pct(p) > 0).length;
   res.send(layout({ title: `${shopName()} — Paiement à la livraison`, desc: 'Commandez en ligne, payez à la réception. Livraison rapide.', active: 'home',
     body: `<section class="hero"><span class="hbadge">🚚 Paiement à la livraison</span>
       <h1>${esc(shopName())}<br><span>Commandez, payez à la réception</span></h1><p>Livraison rapide — aucun paiement en avance</p>
-      <div class="hbtns"><a href="#categories" class="btn w">☰ Catégories</a><a href="#tous" class="btn r">🛒 Tous les produits</a></div></section>
-    <div class="qi"><a href="#categories"><i>☰</i>Catégories</a><a href="${promos.length ? '#promos' : '#tous'}"><i>🏷️</i>Promotions</a>
-      <a href="#tous"><i>🔥</i>Tous les produits</a><a href="/suivi"><i>🚚</i>Suivi commande</a></div>
+      <div class="hbtns"><a href="#categories" class="btn w">☰ Catégories</a><a href="/boutique?tout=1" class="btn r">🛒 Tous les produits</a></div></section>
+    <div class="qi"><a href="#categories"><i>☰</i>Catégories</a><a href="${nPromo ? '/boutique?promo=1' : '/boutique?tout=1'}"><i>🏷️</i>Promotions</a>
+      <a href="/boutique?tout=1"><i>🔥</i>Tous les produits</a><a href="/suivi"><i>🚚</i>Suivi commande</a></div>
     <div class="strip">⚡ <b>Paiement à la livraison</b> — vous payez seulement quand vous recevez le colis ⚡</div>
     ${section('Catégories', catGrid(), '', 'categories')}
-    ${news.length ? section('🆕 Nouveautés', scroll(news, true), '<a class="sl" href="#tous">Afficher tout</a>') : ''}
-    ${promos.length ? section('🏷️ Promotions', scroll(promos), '', 'promos') : ''}
-    ${section('🏪 Tous les produits', grid(all), `<span class="sc">${all.length} produit${all.length > 1 ? 's' : ''}</span>`, 'tous')}` }));
+    ${news.length ? section('🆕 Nouveautés', scroll(news), more('/boutique?tout=1')) : ''}
+    ${promos.length ? section('🏷️ Promotions', scroll(promos), more('/boutique?promo=1', nPromo), 'promos') : ''}
+    ${rows}
+    ${all.length ? `<div class="allbtn"><a class="btn r" href="/boutique?tout=1">🏪 Voir tous les produits (${all.length})</a></div>` : '<p class="empty">Aucun produit pour le moment.</p>'}` }));
 });
 
 // ---------- Page produit ----------
