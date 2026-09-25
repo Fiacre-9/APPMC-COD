@@ -63,19 +63,34 @@ function normalizeOptions(raw) {
   let list = raw; if (typeof raw === 'string') { try { list = JSON.parse(raw || '[]'); } catch { throw new Error('Variantes invalides'); } }
   if (!Array.isArray(list)) throw new Error('Variantes invalides');
   return list.slice(0, 5).map(g => ({ name: String(g?.name || '').trim().slice(0, 40),
-    values: (Array.isArray(g?.values) ? g.values : []).slice(0, 30).map(v => ({ label: String(v?.label ?? v ?? '').trim().slice(0, 40), extra: Math.max(0, Math.round((+v?.extra || 0) * 100) / 100) }))
+    values: (Array.isArray(g?.values) ? g.values : []).slice(0, 30).map(v => ({ label: String(v?.label ?? v ?? '').trim().slice(0, 40),
+      extra: Math.max(0, Math.round((+v?.extra || 0) * 100) / 100),
+      // stock par valeur : null = non suivi (illimité), sinon nombre ≥ 0
+      stock: v?.stock === '' || v?.stock == null || isNaN(+v.stock) ? null : Math.max(0, Math.floor(+v.stock)) }))
       .filter(v => v.label) })).filter(g => g.name && g.values.length);
 }
 const productOptions = (p) => { try { return normalizeOptions(p?.options || '[]'); } catch { return []; } };
-// Prix unitaire + libellé de la variante choisie ; `strict` = le client doit choisir une valeur par groupe
-function pricing(product, chosen = {}, strict = false) {
-  let unit = +product.price || 0; const parts = [];
+// Prix unitaire + libellé de la variante choisie ; `strict` = le client doit choisir une valeur par groupe, en stock
+function pricing(product, chosen = {}, strict = false, qty = 1) {
+  let unit = +product.price || 0; const parts = [], picks = [];
   for (const g of productOptions(product)) {
     const label = chosen?.[g.name], v = g.values.find(x => x.label === label);
     if (!v) { if (strict) throw new Error(`Choisissez : ${g.name}`); continue; }
-    unit += v.extra; parts.push(`${g.name} : ${v.label}`);
+    if (strict && v.stock != null && v.stock < qty)
+      throw new Error(v.stock ? `Plus que ${v.stock} en stock pour ${g.name} : ${v.label}` : `${g.name} : ${v.label} est épuisé`);
+    unit += v.extra; parts.push(`${g.name} : ${v.label}`); picks.push({ g: g.name, v: v.label });
   }
-  return { unit: Math.round(unit * 100) / 100, variant: parts.join(' · ') };
+  return { unit: Math.round(unit * 100) / 100, variant: parts.join(' · '), picks };
+}
+// Stock des valeurs de variantes suivies : −qty à la commande, +qty si annulée / retournée
+function moveVariantStock(productId, picks, delta) {
+  const p = db.prepare('SELECT options FROM products WHERE id=?').get(productId); if (!p || !picks?.length) return;
+  const opts = productOptions(p); let changed = false;
+  for (const { g, v } of picks) {
+    const val = opts.find(x => x.name === g)?.values.find(x => x.label === v);
+    if (val && val.stock != null) { val.stock = Math.max(0, val.stock + delta); changed = true; }
+  }
+  if (changed) db.prepare('UPDATE products SET options=? WHERE id=?').run(JSON.stringify(opts), productId);
 }
 
 // ---------- Commandes ----------
@@ -83,13 +98,15 @@ function createOrder(d) {
   const product = d.product_id ? db.prepare('SELECT * FROM products WHERE id=? OR wc_id=?').get(d.product_id, d.product_id) : null;
   const qty = Math.min(999, Math.max(1, Math.floor(+d.qty) || 1));
   // Le montant est toujours recalculé ici (prix + suppléments des variantes) : jamais celui envoyé par le navigateur
-  const price = product ? pricing(product, d.options, d.strictOptions) : { unit: 0, variant: '' };
+  const price = product ? pricing(product, d.options, d.strictOptions, qty) : { unit: 0, variant: '', picks: [] };
   const customer_id = upsertCustomer(d);
   const amount = d.amount != null ? +d.amount : Math.round(price.unit * qty * 100) / 100;
   const pname = (product?.name || d.product_name || '') + (price.variant ? ` (${price.variant})` : '');
-  const id = db.prepare(`INSERT INTO orders(wc_id,customer_id,product_id,product_name,qty,amount,name,phone,address,city,channel_id,status,vendor_id,variant)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(d.wc_id || null, customer_id, product?.id || null, pname,
-    qty, amount, d.name, d.phone, d.address, d.city || '', d.channel_id || null, d.status || 'nouveau', product?.vendor_id || null, price.variant).lastInsertRowid;
+  const id = db.prepare(`INSERT INTO orders(wc_id,customer_id,product_id,product_name,qty,amount,name,phone,address,city,channel_id,status,vendor_id,variant,options_json)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(d.wc_id || null, customer_id, product?.id || null, pname,
+    qty, amount, d.name, d.phone, d.address, d.city || '', d.channel_id || null, d.status || 'nouveau', product?.vendor_id || null, price.variant,
+    JSON.stringify(price.picks)).lastInsertRowid;
+  if (product) moveVariantStock(product.id, price.picks, -qty);
   db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(id, d.status || 'nouveau', 'Commande créée');
   if (product) moveStock(product.id, -qty, 'sortie', `Commande #${id}`);
   runAutomations('status:' + (d.status || 'nouveau'), id);
@@ -112,8 +129,10 @@ function setStatus(id, status, note = '') {
       .run(a.id, id, Math.round(o.amount * a.commission_rate) / 100);
   }
   // Restock si annulé / retourné
-  if (['annule', 'retourne'].includes(status) && !['annule', 'retourne'].includes(o.status) && o.product_id)
+  if (['annule', 'retourne'].includes(status) && !['annule', 'retourne'].includes(o.status) && o.product_id) {
     moveStock(o.product_id, o.qty, 'entree', `Retour commande #${id}`);
+    try { moveVariantStock(o.product_id, JSON.parse(o.options_json || '[]'), o.qty); } catch {}
+  }
   // Auto-assignation livreur
   if (status === 'confirme' && !o.courier_id) autoAssign(id);
 
@@ -143,7 +162,7 @@ function autoAssign(orderId) {
 // ---------- Stock ----------
 function moveStock(product_id, qty, type, note) {
   db.prepare('INSERT INTO stock_moves(product_id,qty,type,note) VALUES(?,?,?,?)').run(product_id, qty, type, note);
-  db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(qty, product_id);
+  db.prepare('UPDATE products SET stock=MAX(0, stock+?) WHERE id=?').run(qty, product_id); // jamais de stock négatif
 }
 
 // ---------- Soldes ----------

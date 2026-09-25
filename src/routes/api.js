@@ -5,6 +5,7 @@ const S = require('../services');
 const conn = require('../connectors');
 const push = require('../push');
 const meta = require('../meta');
+const P = require('../products');
 
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
@@ -14,13 +15,11 @@ function crud(table, fields) {
   router.post(`/${table}`, wrap((req, res) => {
     const d = pick(req.body, fields); const k = Object.keys(d);
     const id = db.prepare(`INSERT INTO ${table}(${k}) VALUES(${k.map(() => '?')})`).run(...Object.values(d)).lastInsertRowid;
-    if (table === 'products') { S.productSlug(id); meta.scheduleSync(); } // adresse de la page produit /p/... + catalogue Meta
     res.json({ id });
   }));
   router.put(`/${table}/:id`, wrap((req, res) => {
     const d = pick(req.body, fields); const k = Object.keys(d);
     if (k.length) db.prepare(`UPDATE ${table} SET ${k.map(x => x + '=?')} WHERE id=?`).run(...Object.values(d), req.params.id);
-    if (table === 'products') meta.scheduleSync();
     res.json({ ok: true });
   }));
   router.delete(`/${table}/:id`, (req, res) => { db.prepare(`DELETE FROM ${table} WHERE id=?`).run(req.params.id); res.json({ ok: true }); });
@@ -110,7 +109,19 @@ router.post('/couriers/:id/token', (req, res) => {
 });
 
 // ---------- Stock, produits, canaux ----------
-crud('products', ['name', 'price', 'compare_price', 'stock', 'wc_id', 'description', 'active', 'vendor_id']);
+router.get('/products', (req, res) => res.json(db.prepare(`SELECT p.*, v.shop_name vendor FROM products p LEFT JOIN vendors v ON v.id=p.vendor_id
+  ORDER BY p.id DESC`).all()));
+const vendorOf = (b) => b.vendor_id === undefined ? {} : { vendor_id: b.vendor_id ? +b.vendor_id : null };
+router.post('/products', wrap((req, res) => {
+  const id = P.createProduct(req.body, { ...vendorOf(req.body), ...(req.body.wc_id ? { wc_id: +req.body.wc_id } : {}) }); meta.scheduleSync(); res.json({ id });
+}));
+router.put('/products/:id', wrap((req, res) => {
+  const p = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id); if (!p) throw new Error('Produit introuvable');
+  P.updateProduct(p, req.body, vendorOf(req.body)); meta.scheduleSync(); res.json({ ok: true });
+}));
+router.delete('/products/:id', wrap((req, res) => {
+  const p = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id); if (p) P.removeProduct(p); meta.scheduleSync(); res.json({ ok: true });
+}));
 router.post('/products/:id/image', wrap((req, res) => {
   db.prepare('UPDATE products SET image=? WHERE id=?').run(require('../uploads').saveImage(req.body.image_data), req.params.id); res.json({ ok: true });
 }));

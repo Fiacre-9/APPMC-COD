@@ -8,11 +8,16 @@
       var col = el.getAttribute('data-color') || c.color, p = c.product, opts = (p && p.options) || [];
       var money = function (n) { return (Math.round(n * 100) / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' ' + (c.currency || '$'); };
       var inp = 'padding:12px;border:1px solid #ccc;border-radius:8px;font-size:16px';
-      // Variantes : une rangée de boutons par groupe (Taille, Couleur…), la 1re valeur est présélectionnée
+      // Variantes : une rangée de boutons par groupe (Taille, Couleur…) ; valeur épuisée grisée ; 1re valeur disponible présélectionnée
+      var out = function (v) { return v.stock != null && v.stock <= 0; };
+      var chosen = opts.map(function (g) { for (var i = 0; i < g.values.length; i++) if (!out(g.values[i])) return i; return -1; });
+      var soldOut = chosen.indexOf(-1) !== -1;
       var variants = opts.map(function (g, gi) {
-        return '<div><div style="font-size:14px;font-weight:600;margin-bottom:6px">' + esc(g.name) + ' : <span data-vl="' + gi + '" style="font-weight:400">' + esc(g.values[0].label) + '</span></div>' +
+        return '<div><div style="font-size:14px;font-weight:600;margin-bottom:6px">' + esc(g.name) + ' : <span data-vl="' + gi + '" style="font-weight:400">' + (chosen[gi] >= 0 ? esc(g.values[chosen[gi]].label) : 'épuisé') + '</span></div>' +
           '<div style="display:flex;flex-wrap:wrap;gap:6px">' + g.values.map(function (v, vi) {
-            return '<button type="button" data-g="' + gi + '" data-v="' + vi + '" style="padding:8px 12px;border-radius:8px;font-size:14px;cursor:pointer;background:#fff;border:2px solid ' + (vi ? '#ddd' : col) + '">' +
+            var off = out(v);
+            return '<button type="button" data-g="' + gi + '" data-v="' + vi + '"' + (off ? ' disabled title="Épuisé"' : '') + ' style="padding:8px 12px;border-radius:8px;font-size:14px;background:#fff;' +
+              (off ? 'color:#aaa;text-decoration:line-through;cursor:not-allowed;border:2px dashed #e5e7eb' : 'cursor:pointer;border:2px solid ' + (vi === chosen[gi] ? col : '#ddd')) + '">' +
               esc(v.label) + (v.extra ? ' <small style="color:#666">+' + esc(money(v.extra)) + '</small>' : '') + '</button>'; }).join('') + '</div></div>';
       }).join('');
       var qtyRow = p ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-size:14px;font-weight:600">Quantité</span>' +
@@ -30,21 +35,25 @@
           return '<input name="' + f[0] + '" placeholder="' + f[1] + '" ' + (f[0] !== 'city' ? 'required' : '') + (f[0] === 'phone' ? ' type="tel" autocomplete="tel"' : '') + ' style="' + inp + '">'; }).join('') +
         '<button data-submit style="background:' + col + ';color:#fff;border:0;padding:14px;border-radius:8px;font-size:17px;font-weight:bold;cursor:pointer">' + esc(c.button) + '</button>' +
         '<small style="text-align:center;color:#555">' + esc(c.guarantee) + '</small><div class="mireb-msg" style="color:#dc2626;font-weight:600"></div></form>';
-      var form = el.querySelector('form'), chosen = opts.map(function () { return 0; });
+      var form = el.querySelector('form');
       // Total en direct : (prix + suppléments) × quantité
       function refresh() {
         if (!p) return;
-        var q = form.qty, n = Math.min(99, Math.max(1, parseInt(q.value, 10) || 1)); if (String(n) !== q.value) q.value = n;
-        var unit = +p.price; opts.forEach(function (g, gi) { unit += +g.values[chosen[gi]].extra || 0; });
+        if (soldOut) { form.querySelector('[data-total]').innerHTML = '<b style="color:#dc2626">Produit épuisé pour le moment</b>'; form.querySelector('[data-submit]').disabled = true; return; }
+        // Quantité limitée au stock des valeurs choisies (si suivi)
+        var max = 99, unit = +p.price;
+        opts.forEach(function (g, gi) { var v = g.values[chosen[gi]]; unit += +v.extra || 0; if (v.stock != null) max = Math.min(max, v.stock); });
+        var q = form.qty, n = Math.min(max, Math.max(1, parseInt(q.value, 10) || 1)); if (String(n) !== q.value) q.value = n; q.max = max;
         form.querySelector('[data-total]').innerHTML = (n > 1 || opts.length ? esc(money(unit)) + ' × ' + n + ' = ' : '') +
-          '<b style="font-size:18px;color:' + col + '">' + esc(money(unit * n)) + '</b><br><span style="color:#555">à payer à la livraison</span>';
+          '<b style="font-size:18px;color:' + col + '">' + esc(money(unit * n)) + '</b><br><span style="color:#555">à payer à la livraison</span>' +
+          (max <= 5 ? '<br><span style="color:#c2410c;font-weight:600">🔥 Plus que ' + max + ' en stock</span>' : '');
       }
       form.addEventListener('click', function (e) {
         var t = e.target.closest ? e.target.closest('button') : null; if (!t) return;
         if (t.hasAttribute('data-q')) { form.qty.value = (parseInt(form.qty.value, 10) || 1) + +t.getAttribute('data-q'); refresh(); }
-        if (t.hasAttribute('data-g')) {
+        if (t.hasAttribute('data-g') && !t.disabled) {
           var gi = +t.getAttribute('data-g'), vi = +t.getAttribute('data-v'); chosen[gi] = vi;
-          form.querySelectorAll('[data-g="' + gi + '"]').forEach(function (b) { b.style.borderColor = +b.getAttribute('data-v') === vi ? col : '#ddd'; });
+          form.querySelectorAll('[data-g="' + gi + '"]:not([disabled])').forEach(function (b) { b.style.borderColor = +b.getAttribute('data-v') === vi ? col : '#ddd'; });
           form.querySelector('[data-vl="' + gi + '"]').textContent = opts[gi].values[vi].label; refresh();
         }
       });

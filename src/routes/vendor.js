@@ -4,9 +4,9 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { db, STATUSES, categories } = require('../db');
 const S = require('../services');
-const { saveImage } = require('../uploads');
 const push = require('../push');
 const meta = require('../meta');
+const P = require('../products');
 
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(400).json({ error: e.message }));
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
@@ -68,41 +68,12 @@ module.exports = (SECRET) => {
   });
 
   // ---------- Produits ----------
-  const FIELDS = ['name', 'price', 'compare_price', 'stock', 'short_description', 'description', 'active', 'category', 'options'];
-  const MAX_PHOTOS = 6;
-  // Photos : on garde celles déjà enregistrées pour ce produit (gallery_keep) + les nouvelles (gallery_new, data URL)
-  function applyPhotos(body, d, current = []) {
-    if (body.gallery_keep === undefined && body.gallery_new === undefined && !body.image_data) return;
-    const keep = (Array.isArray(body.gallery_keep) ? body.gallery_keep : current).filter(u => current.includes(u));
-    const fresh = [...(Array.isArray(body.gallery_new) ? body.gallery_new : []), ...(body.image_data ? [body.image_data] : [])];
-    if (keep.length + fresh.length > MAX_PHOTOS) throw new Error(`${MAX_PHOTOS} photos maximum`);
-    const all = [...keep, ...fresh.map(saveImage)];
-    d.gallery = JSON.stringify(all); d.image = all[0] || '';
-  }
-  const photosOf = p => { try { const g = JSON.parse(p.gallery || '[]'); return g.length ? g : (p.image ? [p.image] : []); } catch { return []; } };
-  const checkCat = d => { if (d.options !== undefined) d.options = JSON.stringify(S.normalizeOptions(d.options)); if (d.category && !categories().some(c => c.slug === d.category)) throw new Error('Catégorie inconnue'); };
   router.get('/api/products', (req, res) => res.json(db.prepare('SELECT * FROM products WHERE vendor_id=? ORDER BY id DESC').all(req.vendor.id)));
   router.post('/api/products', wrap((req, res) => {
-    if (!req.body.name) throw new Error('Nom du produit obligatoire');
-    const d = pick(req.body, FIELDS); checkCat(d); applyPhotos(req.body, d);
-    d.vendor_id = req.vendor.id; const k = Object.keys(d);
-    const id = db.prepare(`INSERT INTO products(${k}) VALUES(${k.map(() => '?')})`).run(...Object.values(d)).lastInsertRowid;
-    S.productSlug(id); meta.scheduleSync(); res.json({ id });
+    const id = P.createProduct(req.body, { vendor_id: req.vendor.id }); meta.scheduleSync(); res.json({ id });
   }));
-  router.put('/api/products/:id', wrap((req, res) => {
-    const p = own(req); const d = pick(req.body, FIELDS); checkCat(d); applyPhotos(req.body, d, photosOf(p));
-    const k = Object.keys(d);
-    if (k.length) db.prepare(`UPDATE products SET ${k.map(x => x + '=?')} WHERE id=?`).run(...Object.values(d), p.id);
-    if (d.name && d.name !== p.name) S.productSlug(p.id);
-    meta.scheduleSync(); res.json({ ok: true });
-  }));
-  router.delete('/api/products/:id', wrap((req, res) => {
-    const p = own(req);
-    // Un produit déjà commandé est masqué plutôt que supprimé, pour garder l'historique
-    if (db.prepare('SELECT 1 FROM orders WHERE product_id=?').get(p.id)) db.prepare('UPDATE products SET active=0 WHERE id=?').run(p.id);
-    else db.prepare('DELETE FROM products WHERE id=?').run(p.id);
-    meta.scheduleSync(); res.json({ ok: true });
-  }));
+  router.put('/api/products/:id', wrap((req, res) => { P.updateProduct(own(req), req.body); meta.scheduleSync(); res.json({ ok: true }); }));
+  router.delete('/api/products/:id', wrap((req, res) => { P.removeProduct(own(req)); meta.scheduleSync(); res.json({ ok: true }); }));
 
   router.post('/api/push/subscribe', wrap((req, res) => { push.subscribe(req.body.subscription, 'vendor', req.vendor.id); res.json({ ok: true }); }));
 

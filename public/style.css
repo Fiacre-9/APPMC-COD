@@ -28,3 +28,16 @@ form.f{display:grid;gap:10px}.row{display:flex;gap:8px;flex-wrap:wrap;align-item
 #toast{position:fixed;bottom:16px;right:16px;background:#1d2330;color:#fff;padding:10px 14px;border-radius:8px;opacity:0;transition:.3s}#toast.on{opacity:1}
 .bar{height:8px;background:var(--red);border-radius:4px}.mut{color:var(--mut)}code{background:#f1f5f9;padding:2px 6px;border-radius:4px;word-break:break-all}
 @media(max-width:800px){aside{position:fixed;left:-240px;z-index:5;transition:.2s}body.open aside{left:0}.burger{display:block;background:#1d2330}main{padding:12px}}
+
+/* Éditeur de produit (vendeur + admin) */
+.prev{max-width:140px;border-radius:8px;display:block}
+.pics{display:flex;gap:8px;flex-wrap:wrap}.pic{position:relative;width:76px;height:76px}.pic img{width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.pic button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;padding:0;font-size:12px;line-height:22px}
+.pic span{position:absolute;bottom:3px;left:3px;background:#1A56DB;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px}
+.addpic{width:76px;height:76px;border:2px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--mut);cursor:pointer}
+.mdbar{display:flex;gap:4px;flex-wrap:wrap}.mdbar button{padding:4px 9px;font-size:12px;background:#e5e7eb;color:var(--ink)}.mdbar button.on{background:#1A56DB;color:#fff}
+.mdprev{border:1px solid var(--line);border-radius:6px;padding:10px 12px;min-height:120px;line-height:1.6;background:#fff}.mdprev img{max-width:100%;border-radius:8px}
+.mdprev blockquote{margin:0 0 10px;padding:8px 12px;border-left:4px solid #1A56DB;background:#EEF2FF}
+label.lb{font-size:12px;font-weight:600;color:var(--mut);margin-bottom:-6px}.share{display:flex;gap:6px;flex-wrap:wrap}
+.optg{border:1px solid var(--line);border-radius:8px;padding:8px;display:grid;gap:6px}.optv{width:100%}.optv th{font-size:11px;padding:2px 4px}
+.optv td{padding:2px 4px;border:0}.optv td:nth-child(2),.optv td:nth-child(3){width:26%}.optv td:last-child{width:34px}

@@ -74,6 +74,7 @@ addCol('products', 'gallery', "TEXT DEFAULT '[]'");
 addCol('orders', 'vendor_id', 'INTEGER');
 addCol('products', 'options', "TEXT DEFAULT '[]'"); // variantes : [{ name: 'Taille', values: [{ label: 'XL', extra: 5 }] }]
 addCol('orders', 'variant', "TEXT DEFAULT ''");
+addCol('orders', 'options_json', "TEXT DEFAULT '[]'"); // variantes choisies (pour remettre leur stock si annulation)
 // Date d'ajout des produits (section « Nouveautés ») : remplie automatiquement à chaque création, quel que soit l'auteur
 if (!db.prepare('PRAGMA table_info(products)').all().some(x => x.name === 'created_at')) {
   db.exec('ALTER TABLE products ADD COLUMN created_at TEXT');
@@ -95,6 +96,8 @@ if (!db.prepare('SELECT COUNT(*) n FROM categories').get().n) {
   ].forEach((c, i) => ins.run(...c, i));
 }
 const categories = () => db.prepare('SELECT slug, name, icon, google_category FROM categories ORDER BY position, id').all();
+
+db.exec('UPDATE products SET stock=0 WHERE stock<0'); // corrige les stocks négatifs d'avant
 
 const getSetting = (k, d = '') => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value ?? d;
 const setSetting = (k, v) => db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v));

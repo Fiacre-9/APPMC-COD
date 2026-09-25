@@ -1,6 +1,6 @@
 // Service worker Mireb : applications installables + consultation hors connexion.
 // Les données (API, commandes, connexions) passent toujours par le réseau et ne sont jamais mises en cache.
-const VERSION = 'mireb-v4';
+const VERSION = 'mireb-v5';
 const STATIC = `${VERSION}-static`, PAGES = `${VERSION}-pages`, IMAGES = `${VERSION}-images`;
 const PRECACHE = ['/offline.html', '/style.css', '/pwa.js', '/widget.js', '/markdown.js', '/icon.svg',
   '/icons/boutique-192.png', '/icons/vendeur-192.png', '/icons/livreur-192.png', '/icons/admin-192.png'];

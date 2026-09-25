@@ -200,18 +200,32 @@ async function genLink(id, phone) {
 }
 
 // ---------- Stock ----------
+let PRODS = [];
 async function stock(v) {
-  const [p, m] = await Promise.all([api('/api/products'), api('/api/stock-moves')]);
-  v.innerHTML = `<div class="card"><h3>Produits</h3><form class="row" onsubmit="event.preventDefault();api('/api/products','POST',formData(this)).then(route)">
-    <input name="name" placeholder="Nom du produit" required><input name="price" type="number" step="0.01" placeholder="Prix"><input name="stock" type="number" placeholder="Stock initial"><button>+ Produit</button></form>
-    <div class="tw"><table><tr><th>ID</th><th>Produit</th><th>Prix</th><th>Stock</th><th>WooCommerce</th><th>Page produit</th></tr>
-    ${p.map(x => `<tr><td>${x.id}</td><td>${x.active ? '' : '🙈 '}${esc(x.name)}</td><td>${money(x.price)}</td><td><b>${x.stock}</b></td><td>${x.wc_id || '—'}</td>
-      <td>${x.slug ? `<a target="_blank" href="/p/${esc(x.slug)}">/p/${esc(x.slug)}</a>` : '—'}</td></tr>`).join('')}</table></div></div>
+  const [p, m] = await Promise.all([api('/api/products'), api('/api/stock-moves')]); PRODS = p;
+  const optsTxt = x => { try { return JSON.parse(x.options || '[]').map(g => `${esc(g.name)} : ${g.values.map(o => esc(o.label) + (o.stock != null ? ` <small class="${o.stock ? 'mut' : 'err'}">(${o.stock})</small>` : '')).join(', ')}`).join('<br>'); } catch { return ''; } };
+  v.innerHTML = `<div class="card"><div class="row"><h3 style="margin:0">Produits</h3><button style="flex:0 0 auto" onclick="adminProduct()">+ Ajouter un produit</button></div>
+    <div class="tw"><table><tr><th></th><th>Produit</th><th>Prix</th><th>Stock</th><th>Variantes</th><th>Vendeur</th><th></th></tr>
+    ${p.map(x => `<tr><td>${x.image ? `<img src="${esc(x.image)}" style="width:44px;height:44px;object-fit:cover;border-radius:6px">` : ''}</td>
+      <td>${x.active ? '' : '🙈 '}<b>${esc(x.name)}</b>${x.slug ? `<br><a class="mut" target="_blank" href="/p/${esc(x.slug)}">/p/${esc(x.slug)}</a>` : ''}</td>
+      <td>${money(x.price)}${x.compare_price > x.price ? `<br><s class="mut">${money(x.compare_price)}</s>` : ''}</td><td><b>${x.stock}</b></td>
+      <td style="font-size:12px">${optsTxt(x) || '—'}</td><td>${x.vendor ? '🏪 ' + esc(x.vendor) : '<span class="mut">Boutique</span>'}</td>
+      <td style="white-space:nowrap"><button class="sm" onclick="adminProduct(${x.id})">✏️</button> <button class="sm gray" onclick="adminDelProduct(${x.id})">🗑</button></td></tr>`).join('')
+      || '<tr><td colspan=7 class="mut">Aucun produit</td></tr>'}</table></div></div>
   <div class="card"><h3>Mouvement de stock</h3><form class="row" onsubmit="event.preventDefault();api('/api/stock-moves','POST',formData(this)).then(route)">
     <select name="product_id">${p.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
     <select name="type"><option value="entree">Entrée</option><option value="sortie">Sortie</option></select>
     <input name="qty" type="number" placeholder="Quantité" required><input name="note" placeholder="Note"><button>Enregistrer</button></form>
     <div class="tw"><table>${m.map(x => `<tr><td>${esc(x.created_at)}</td><td>${esc(x.name)}</td><td>${x.qty > 0 ? '+' : ''}${x.qty}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div></div>`;
+}
+async function adminProduct(id) {
+  const [cats, vendors] = await Promise.all([api('/api/categories'), api('/api/vendors')]);
+  ProductEditor.open({ product: PRODS.find(x => x.id === id), categories: cats, vendors,
+    save: d => api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d).then(() => route()) });
+}
+async function adminDelProduct(id) {
+  if (!confirm('Supprimer ce produit ? (masqué s\'il a déjà des commandes)')) return;
+  await api('/api/products/' + id, 'DELETE'); route();
 }
 
 // ---------- Vendeurs (multivendeur) ----------
