@@ -72,6 +72,8 @@ addCol('products', 'category', "TEXT DEFAULT ''");
 addCol('products', 'short_description', "TEXT DEFAULT ''");
 addCol('products', 'gallery', "TEXT DEFAULT '[]'");
 addCol('orders', 'vendor_id', 'INTEGER');
+addCol('products', 'options', "TEXT DEFAULT '[]'"); // variantes : [{ name: 'Taille', values: [{ label: 'XL', extra: 5 }] }]
+addCol('orders', 'variant', "TEXT DEFAULT ''");
 // Date d'ajout des produits (section « Nouveautés ») : remplie automatiquement à chaque création, quel que soit l'auteur
 if (!db.prepare('PRAGMA table_info(products)').all().some(x => x.name === 'created_at')) {
   db.exec('ALTER TABLE products ADD COLUMN created_at TEXT');

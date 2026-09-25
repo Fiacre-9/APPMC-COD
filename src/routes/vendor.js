@@ -68,7 +68,7 @@ module.exports = (SECRET) => {
   });
 
   // ---------- Produits ----------
-  const FIELDS = ['name', 'price', 'compare_price', 'stock', 'short_description', 'description', 'active', 'category'];
+  const FIELDS = ['name', 'price', 'compare_price', 'stock', 'short_description', 'description', 'active', 'category', 'options'];
   const MAX_PHOTOS = 6;
   // Photos : on garde celles déjà enregistrées pour ce produit (gallery_keep) + les nouvelles (gallery_new, data URL)
   function applyPhotos(body, d, current = []) {
@@ -80,7 +80,7 @@ module.exports = (SECRET) => {
     d.gallery = JSON.stringify(all); d.image = all[0] || '';
   }
   const photosOf = p => { try { const g = JSON.parse(p.gallery || '[]'); return g.length ? g : (p.image ? [p.image] : []); } catch { return []; } };
-  const checkCat = d => { if (d.category && !categories().some(c => c.slug === d.category)) throw new Error('Catégorie inconnue'); };
+  const checkCat = d => { if (d.options !== undefined) d.options = JSON.stringify(S.normalizeOptions(d.options)); if (d.category && !categories().some(c => c.slug === d.category)) throw new Error('Catégorie inconnue'); };
   router.get('/api/products', (req, res) => res.json(db.prepare('SELECT * FROM products WHERE vendor_id=? ORDER BY id DESC').all(req.vendor.id)));
   router.post('/api/products', wrap((req, res) => {
     if (!req.body.name) throw new Error('Nom du produit obligatoire');

@@ -87,10 +87,24 @@ async function products(v) {
   <p class="mut">🔗 Lien = page produit avec formulaire de commande. Ajoutez <code>?canal=ID</code> pour suivre une pub. &lt;/&gt; Code = formulaire à coller sur votre propre site.</p>`;
 }
 let PICS = []; // [{url}] photos existantes ou {data} nouvelles
+let OPTS = []; // variantes : [{ name: 'Taille', text: 'S, M, L, XL +5' }]
+const optsOf = p => { try { return JSON.parse(p.options || '[]'); } catch { return []; } };
+// « S, M, XL +5 » ⇄ [{label:'S',extra:0}, …, {label:'XL',extra:5}]
+const valuesToText = vs => vs.map(v => v.extra ? `${v.label} +${v.extra}` : v.label).join(', ');
+const textToValues = t => t.split(',').map(x => x.trim()).filter(Boolean).map(x => { const m = /^(.*?)\s*\+\s*(\d+(?:[.,]\d+)?)$/.exec(x);
+  return m ? { label: m[1].trim(), extra: +m[2].replace(',', '.') } : { label: x, extra: 0 }; }).filter(v => v.label);
+function drawOpts() {
+  $('#opts').innerHTML = OPTS.map((g, i) => `<div class="row" style="align-items:flex-start">
+    <input style="flex:0 0 130px" placeholder="Taille, Couleur…" value="${esc(g.name)}" oninput="OPTS[${i}].name=this.value">
+    <input placeholder="S, M, L, XL +5" value="${esc(g.text)}" oninput="OPTS[${i}].text=this.value">
+    <button type="button" class="sm gray" style="flex:0 0 auto" onclick="OPTS.splice(${i},1);drawOpts()">✕</button></div>`).join('')
+    + (OPTS.length < 5 ? `<button type="button" class="sm gray" onclick="OPTS.push({name:'',text:''});drawOpts()">+ Ajouter une variante (taille, couleur, pointure…)</button>` : '');
+}
 const photosOf = p => { try { const g = JSON.parse(p.gallery || '[]'); return g.length ? g : (p.image ? [p.image] : []); } catch { return p.image ? [p.image] : []; } };
 function productForm(id) {
   const p = PRODUCTS.find(x => x.id === id) || { active: 1 };
   PICS = photosOf(p).map(url => ({ url }));
+  OPTS = optsOf(p).map(g => ({ name: g.name, text: valuesToText(g.values) }));
   modal(`<h3>${id ? 'Modifier' : 'Nouveau'} produit</h3><form class="f" onsubmit="saveProduct(event,${id || 0})">
     <label class="lb">Photos (6 max — la 1re est la photo principale)</label><div class="pics" id="pics"></div>
     <input type="file" id="picf" accept="image/*" multiple hidden onchange="addPics(this)">
@@ -100,18 +114,20 @@ function productForm(id) {
     <div class="row"><div><label class="lb">Catégorie</label><select name="category"><option value="">— Choisir —</option>
       ${ME.categories.map(c => `<option value="${c.slug}" ${c.slug === p.category ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
     <div><label class="lb">Stock</label><input name="stock" type="number" min="0" value="${p.stock ?? ''}"></div></div>
+    <label class="lb">Variantes — valeurs séparées par des virgules ; « +5 » = supplément de prix pour cette valeur</label>
+    <div id="opts" class="f" style="gap:6px"></div>
     <label class="lb">Courte description (affichée au-dessus du formulaire)</label>
     <textarea name="short_description" rows="2" placeholder="Ex : Sac en cuir véritable, livraison 24h à Kinshasa.">${esc(p.short_description)}</textarea>
     <label class="lb">Description complète — Markdown</label>
     <div class="mdbar"><button type="button" onclick="mdWrap('**','**','gras')"><b>B</b></button><button type="button" onclick="mdWrap('*','*','italique')"><i>I</i></button>
       <button type="button" onclick="mdLine('## ')">Titre</button><button type="button" onclick="mdLine('- ')">• Liste</button><button type="button" onclick="mdLine('✅ ')">✅</button>
-      <button type="button" onclick="mdLine('> ')">❝ Citation</button><button type="button" onclick="mdWrap('[','](https://)','texte du lien')">🔗 Lien</button>
+      <button type="button" onclick="mdLine('> ')">❝ Citation</button><button type="button" onclick="mdWrap('[','](https://)','texte du lien')">🔗 Lien</button><button type="button" onclick="mdVideo()">🎬 Vidéo</button>
       <button type="button" id="mdpv" onclick="mdPreview()">👁 Aperçu</button></div>
-    <textarea name="description" id="mdtxt" rows="9" placeholder="## Pourquoi choisir ce produit ?&#10;- **Qualité** premium&#10;- Livraison rapide&#10;&#10;> Satisfait ou remboursé">${esc(p.description)}</textarea>
+    <textarea name="description" id="mdtxt" rows="9" placeholder="## Pourquoi choisir ce produit ?&#10;- **Qualité** premium&#10;- Livraison rapide&#10;&#10;Collez un lien YouTube / TikTok / Instagram / Facebook seul sur une ligne : la vidéo s'affiche.&#10;https://www.youtube.com/watch?v=…">${esc(p.description)}</textarea>
     <div id="mdout" class="mdprev" hidden></div>
     <label><input type="checkbox" name="active" style="width:auto" ${p.active ? 'checked' : ''}> Visible dans la boutique</label>
     <button>Enregistrer</button></form>`);
-  drawPics();
+  drawPics(); drawOpts();
 }
 function drawPics() {
   $('#pics').innerHTML = PICS.map((x, i) => `<div class="pic"><img src="${esc(x.url || x.data)}">${i ? '' : '<span>Principale</span>'}
@@ -139,6 +155,10 @@ function mdLine(prefix) {
   const t = $('#mdtxt'), s = t.value.lastIndexOf('\n', t.selectionStart - 1) + 1;
   t.setRangeText(prefix, s, s, 'end'); t.focus();
 }
+function mdVideo() {
+  const u = prompt('Lien de la vidéo YouTube, TikTok, Instagram ou Facebook :'); if (!u) return;
+  const t = $('#mdtxt'); t.setRangeText((t.selectionStart && t.value[t.selectionStart - 1] !== '\n' ? '\n' : '') + '\n' + u.trim() + '\n\n', t.selectionStart, t.selectionEnd, 'end'); t.focus();
+}
 function mdPreview() {
   const on = $('#mdout').hidden; $('#mdout').hidden = !on; $('#mdtxt').hidden = on; $('#mdpv').classList.toggle('on', on);
   if (on) $('#mdout').innerHTML = MirebMarkdown.render($('#mdtxt').value) || '<span class="mut">Rien à afficher</span>';
@@ -149,6 +169,7 @@ async function saveProduct(e, id) {
   d.compare_price = d.compare_price === '' ? null : +d.compare_price; d.stock = +d.stock || 0; d.price = +d.price;
   // L'ordre des photos est conservé : existantes gardées puis nouvelles
   d.gallery_keep = PICS.filter(x => x.url).map(x => x.url); d.gallery_new = PICS.filter(x => x.data).map(x => x.data);
+  d.options = OPTS.map(g => ({ name: g.name.trim(), values: textToValues(g.text) })).filter(g => g.name && g.values.length);
   const btn = e.target.querySelector('button:last-child'); btn.disabled = true; btn.textContent = 'Enregistrement…';
   try { await api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d); toast('Produit enregistré'); closeModal(); route(); }
   finally { btn.disabled = false; btn.textContent = 'Enregistrer'; }

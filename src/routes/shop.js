@@ -123,7 +123,7 @@ a{color:inherit;text-decoration:none}img{max-width:100%;display:block}
 const JS = `document.querySelectorAll('.th button').forEach(function(b){b.onclick=function(){
   document.getElementById('mimg').src=b.dataset.src;document.querySelectorAll('.th button').forEach(function(x){x.classList.toggle('on',x===b)})}});
 function goForm(){var f=document.getElementById('mireb-commande');if(!f)return;f.scrollIntoView({behavior:'smooth',block:'start'});
-  var i=f.querySelector('input');if(i)setTimeout(function(){i.focus({preventScroll:true})},450)}
+  var i=f.querySelector('input[name=name]')||f.querySelector('input');if(i)setTimeout(function(){i.focus({preventScroll:true})},450)}
 document.querySelectorAll('[data-goto-form]').forEach(function(a){a.onclick=function(e){e.preventDefault();goForm()}});
 var fm=document.getElementById('mireb-commande');if(fm&&location.hash==='#mireb-commande'){new MutationObserver(function(m,o){if(fm.querySelector('input')){o.disconnect();goForm()}}).observe(fm,{childList:true,subtree:true})}`;
 
@@ -206,7 +206,7 @@ function listing(req, res, CAT) {
       `<span class="sc">${plural(list.length)}</span>${sorter}`) }));
 }
 
-// ---------- Accueil : chaque produit n'apparaît qu'une fois (Nouveautés → Promotions → sa catégorie) ----------
+// ---------- Accueil : Nouveautés → Promotions → Tous les produits (chaque produit une seule fois) ----------
 router.get('/boutique', (req, res) => {
   const CAT = catMap();
   if (req.query.q || req.query.cat || req.query.tout || req.query.promo) return listing(req, res, CAT);
@@ -217,11 +217,8 @@ router.get('/boutique', (req, res) => {
   const promos = take(all.filter(p => pct(p) > 0).sort((x, y) => pct(y) - pct(x)), 10);
   const scroll = (list) => `<div class="scroll">${list.map(p => card(p)).join('')}</div>`;
   const more = (href, n) => `<a class="sl" href="${href}">Voir tout${n ? ` (${n})` : ''}</a>`;
-  // Une rangée par catégorie avec les produits pas encore montrés ; « Voir tout » ouvre la catégorie complète
-  const rows = [...Object.values(CAT), { slug: '', name: 'Autres produits', icon: '📦' }].map(c => {
-    const items = all.filter(p => c.slug ? p.category === c.slug : !CAT[p.category]), rest = take(items, 10);
-    return rest.length ? section(`${c.icon} ${esc(c.name)}`, scroll(rest), c.slug ? more(`/boutique?cat=${c.slug}`, items.length) : more('/boutique?tout=1'), c.slug ? `cat-${c.slug}` : 'cat-autres') : '';
-  }).join('');
+  // Le reste de la boutique en grille : chaque produit n'apparaît qu'une fois sur l'accueil
+  const rest = all.filter(p => !shown.has(p.id));
   const nPromo = all.filter(p => pct(p) > 0).length;
   res.send(layout({ title: `${shopName()} — Paiement à la livraison`, desc: 'Commandez en ligne, payez à la réception. Livraison rapide.', active: 'home',
     body: `<section class="hero"><span class="hbadge">🚚 Paiement à la livraison</span>
@@ -233,7 +230,7 @@ router.get('/boutique', (req, res) => {
     ${section('Catégories', catGrid(), '', 'categories')}
     ${news.length ? section('🆕 Nouveautés', scroll(news), more('/boutique?tout=1')) : ''}
     ${promos.length ? section('🏷️ Promotions', scroll(promos), more('/boutique?promo=1', nPromo), 'promos') : ''}
-    ${rows}
+    ${rest.length ? section('🏪 Tous les produits', grid(rest), `<a class="sl" href="/boutique?tout=1">Trier / filtrer (${all.length})</a>`, 'tous') : ''}
     ${all.length ? `<div class="allbtn"><a class="btn r" href="/boutique?tout=1">🏪 Voir tous les produits (${all.length})</a></div>` : '<p class="empty">Aucun produit pour le moment.</p>'}` }));
 });
 

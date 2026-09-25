@@ -57,15 +57,39 @@ function vendorSlug(name) {
 // Produits existants sans page : on leur attribue une adresse
 db.prepare('SELECT id FROM products WHERE slug IS NULL').all().forEach(p => productSlug(p.id));
 
+// ---------- Variantes (taille, couleur…) ----------
+// Nettoie ce qu'envoie un vendeur : 5 groupes max, 30 valeurs max, supplément de prix ≥ 0
+function normalizeOptions(raw) {
+  let list = raw; if (typeof raw === 'string') { try { list = JSON.parse(raw || '[]'); } catch { throw new Error('Variantes invalides'); } }
+  if (!Array.isArray(list)) throw new Error('Variantes invalides');
+  return list.slice(0, 5).map(g => ({ name: String(g?.name || '').trim().slice(0, 40),
+    values: (Array.isArray(g?.values) ? g.values : []).slice(0, 30).map(v => ({ label: String(v?.label ?? v ?? '').trim().slice(0, 40), extra: Math.max(0, Math.round((+v?.extra || 0) * 100) / 100) }))
+      .filter(v => v.label) })).filter(g => g.name && g.values.length);
+}
+const productOptions = (p) => { try { return normalizeOptions(p?.options || '[]'); } catch { return []; } };
+// Prix unitaire + libellé de la variante choisie ; `strict` = le client doit choisir une valeur par groupe
+function pricing(product, chosen = {}, strict = false) {
+  let unit = +product.price || 0; const parts = [];
+  for (const g of productOptions(product)) {
+    const label = chosen?.[g.name], v = g.values.find(x => x.label === label);
+    if (!v) { if (strict) throw new Error(`Choisissez : ${g.name}`); continue; }
+    unit += v.extra; parts.push(`${g.name} : ${v.label}`);
+  }
+  return { unit: Math.round(unit * 100) / 100, variant: parts.join(' · ') };
+}
+
 // ---------- Commandes ----------
 function createOrder(d) {
   const product = d.product_id ? db.prepare('SELECT * FROM products WHERE id=? OR wc_id=?').get(d.product_id, d.product_id) : null;
-  const qty = +d.qty || 1;
+  const qty = Math.min(999, Math.max(1, Math.floor(+d.qty) || 1));
+  // Le montant est toujours recalculé ici (prix + suppléments des variantes) : jamais celui envoyé par le navigateur
+  const price = product ? pricing(product, d.options, d.strictOptions) : { unit: 0, variant: '' };
   const customer_id = upsertCustomer(d);
-  const amount = d.amount != null ? +d.amount : (product ? product.price * qty : 0);
-  const id = db.prepare(`INSERT INTO orders(wc_id,customer_id,product_id,product_name,qty,amount,name,phone,address,city,channel_id,status,vendor_id)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(d.wc_id || null, customer_id, product?.id || null, product?.name || d.product_name || '',
-    qty, amount, d.name, d.phone, d.address, d.city || '', d.channel_id || null, d.status || 'nouveau', product?.vendor_id || null).lastInsertRowid;
+  const amount = d.amount != null ? +d.amount : Math.round(price.unit * qty * 100) / 100;
+  const pname = (product?.name || d.product_name || '') + (price.variant ? ` (${price.variant})` : '');
+  const id = db.prepare(`INSERT INTO orders(wc_id,customer_id,product_id,product_name,qty,amount,name,phone,address,city,channel_id,status,vendor_id,variant)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(d.wc_id || null, customer_id, product?.id || null, pname,
+    qty, amount, d.name, d.phone, d.address, d.city || '', d.channel_id || null, d.status || 'nouveau', product?.vendor_id || null, price.variant).lastInsertRowid;
   db.prepare('INSERT INTO order_history(order_id,status,note) VALUES(?,?,?)').run(id, d.status || 'nouveau', 'Commande créée');
   if (product) moveStock(product.id, -qty, 'sortie', `Commande #${id}`);
   runAutomations('status:' + (d.status || 'nouveau'), id);
@@ -212,5 +236,5 @@ async function pushUnsynced() {
   return { total: ids.length, ok };
 }
 
-module.exports = { notifyCourier, slugify, productSlug, vendorSlug, upsertCustomer, customerStats, createOrder, setStatus, autoAssign, moveStock, courierBalance, agentDue,
+module.exports = { normalizeOptions, productOptions, pricing, notifyCourier, slugify, productSlug, vendorSlug, upsertCustomer, customerStats, createOrder, setStatus, autoAssign, moveStock, courierBalance, agentDue,
   runDelayedAutomations, importProducts, importWcOrder, pullOrders, pushUnsynced, syncOrder };

@@ -7,14 +7,16 @@ const meta = require('../meta');
 
 // Formulaire COD public (landing page, widget, page produit)
 router.post('/lead', (req, res) => {
-  const { name, phone, address, city, product_id, qty, canal } = req.body;
+  const { name, phone, address, city, product_id, qty, canal, options } = req.body;
   if (!name || !phone || !address) return res.status(400).json({ error: 'Nom, téléphone et adresse sont obligatoires' });
   if (!/^[+\d][\d\s-]{7,}$/.test(phone)) return res.status(400).json({ error: 'Téléphone invalide' });
   // Produit masqué par son vendeur ou vendeur suspendu : plus de commande possible
   if (product_id && db.prepare(`SELECT 1 FROM products p LEFT JOIN vendors v ON v.id=p.vendor_id
     WHERE (p.id=? OR p.wc_id=?) AND (p.active=0 OR v.active=0)`).get(product_id, product_id))
     return res.status(400).json({ error: 'Ce produit n\'est plus disponible' });
-  const id = S.createOrder({ name, phone, address, city, product_id, qty, channel_id: canal || null });
+  let id;
+  try { id = S.createOrder({ name, phone, address, city, product_id, qty: Math.min(99, +qty || 1), options, strictOptions: true, channel_id: canal || null }); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
   const o = db.prepare('SELECT amount, qty, product_id FROM orders WHERE id=?').get(id), c = meta.cfg();
   meta.capi('Purchase', { eventId: `order-${id}`, url: req.get('referer') || '', ip: (req.get('x-forwarded-for') || req.ip || '').split(',')[0].trim(),
     ua: req.get('user-agent'), fbp: req.cookies?._fbp, fbc: req.cookies?._fbc, phone, name, city, value: o.amount,
@@ -26,7 +28,10 @@ router.post('/lead', (req, res) => {
 router.get('/form-config', (req, res) => res.json({ color: getSetting('form_color', '#e8342a'),
   button: getSetting('form_button', 'Commander — Paiement à la livraison'), subtitle: getSetting('form_subtitle', 'Remplissez le formulaire, vous payez à la réception'),
   badge: getSetting('form_badge', ''), guarantee: getSetting('form_guarantee', '✅ Paiement à la livraison · Livraison rapide'),
-  product: req.query.product_id ? db.prepare('SELECT id,name,price FROM products WHERE id=? OR wc_id=?').get(req.query.product_id, req.query.product_id) : null }));
+  currency: process.env.CURRENCY || '$', product: (() => {
+    const p = req.query.product_id ? db.prepare('SELECT id,name,price,compare_price,options FROM products WHERE id=? OR wc_id=?').get(req.query.product_id, req.query.product_id) : null;
+    return p ? { id: p.id, name: p.name, price: p.price, compare_price: p.compare_price, options: S.productOptions(p) } : null;
+  })() }));
 
 // ---------- Notifications push ----------
 router.get('/push/key', (req, res) => res.json({ key: push.publicKey }));
