@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mireb COD</title><link rel="stylesheet" href="/style.css"><link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg"><meta name="theme-color" content="#1d2330"></head>
+<body>
+<div id="login" class="login hidden">
+  <form onsubmit="login(event)">
+    <h1>Mireb COD</h1><p class="mut">Connexion administrateur</p>
+    <input name="email" type="email" placeholder="Email" required autocomplete="username">
+    <input name="password" type="password" placeholder="Mot de passe" required autocomplete="current-password">
+    <button>Se connecter</button><div id="lerr" class="err"></div>
+  </form>
+</div>
+<div id="app" class="hidden">
+  <aside><h2>Mireb COD</h2><nav id="nav"></nav><button class="ghost" onclick="logout()">Déconnexion</button></aside>
+  <main>
+    <header><button class="burger" onclick="document.body.classList.toggle('open')">☰</button><h1 id="title"></h1></header>
+    <div id="view"></div>
+  </main>
+</div>
+<div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()"><div id="mbox" class="box"></div></div>
+<div id="toast"></div>
+<script src="/app.js"></script>
+</body></html>

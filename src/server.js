@@ -9,7 +9,9 @@ const { db } = require('./db');
 const S = require('./services');
 const conn = require('./connectors');
 
-const SECRET = process.env.JWT_SECRET || 'dev-secret';
+// Sans JWT_SECRET, clé aléatoire : les sessions expirent à chaque redémarrage mais ne sont pas falsifiables
+const SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
+if (!process.env.JWT_SECRET) console.warn('⚠️  JWT_SECRET non défini dans .env — clé temporaire utilisée');
 const app = express();
 app.use(express.json({ limit: '2mb', verify: (req, _r, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
