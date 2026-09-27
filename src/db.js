@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS push_subs (id INTEGER PRIMARY KEY, endpoint TEXT UNIQ
 CREATE INDEX IF NOT EXISTS push_subs_role ON push_subs(role, ref_id);
 CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY, slug TEXT UNIQUE, name TEXT, icon TEXT DEFAULT '📦',
   google_category TEXT DEFAULT '', position INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS digital_sales (id INTEGER PRIMARY KEY, product_id INTEGER, vendor_id INTEGER, product_name TEXT,
+  name TEXT, phone TEXT, email TEXT, amount REAL, currency TEXT, method TEXT, reference TEXT UNIQUE, order_number TEXT,
+  status TEXT DEFAULT 'pending', token TEXT UNIQUE, downloads INTEGER DEFAULT 0, channel_id INTEGER, last_check TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP, paid_at TEXT);
 CREATE TABLE IF NOT EXISTS automation_log (id INTEGER PRIMARY KEY, automation_id INTEGER, order_id INTEGER, ok INTEGER, info TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(automation_id, order_id));
 `);
@@ -74,6 +78,12 @@ addCol('products', 'gallery', "TEXT DEFAULT '[]'");
 addCol('orders', 'vendor_id', 'INTEGER');
 addCol('products', 'options', "TEXT DEFAULT '[]'"); // variantes : [{ name: 'Taille', values: [{ label: 'XL', extra: 5 }] }]
 addCol('orders', 'variant', "TEXT DEFAULT ''");
+// Produits numériques : payés en ligne (FlexPay), livrés par téléchargement — les produits physiques restent en paiement à la livraison
+addCol('products', 'type', "TEXT DEFAULT 'physical'");
+addCol('products', 'digital_file', "TEXT DEFAULT ''");   // fichier privé (jamais servi publiquement)
+addCol('products', 'digital_name', "TEXT DEFAULT ''");   // nom d'origine du fichier
+addCol('products', 'digital_url', "TEXT DEFAULT ''");    // ou lien externe (Drive, cours en ligne…)
+addCol('products', 'digital_note', "TEXT DEFAULT ''");   // instructions affichées après paiement
 addCol('orders', 'options_json', "TEXT DEFAULT '[]'"); // variantes choisies (pour remettre leur stock si annulation)
 // Date d'ajout des produits (section « Nouveautés ») : remplie automatiquement à chaque création, quel que soit l'auteur
 if (!db.prepare('PRAGMA table_info(products)').all().some(x => x.name === 'created_at')) {

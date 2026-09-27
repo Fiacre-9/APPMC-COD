@@ -35,7 +35,7 @@ async function auth(e) {
 async function logout() { await api('/auth/logout', 'POST'); showLogin(); }
 
 // ---------- Navigation ----------
-const PAGES = { home: ['📊 Tableau de bord', home], products: ['🛍️ Mes produits', products], orders: ['📦 Mes commandes', orders], shop: ['🏪 Ma boutique', shop] };
+const PAGES = { home: ['📊 Tableau de bord', home], products: ['🛍️ Mes produits', products], orders: ['📦 Mes commandes', orders], digital: ['📥 Ventes numériques', digitalSales], shop: ['🏪 Ma boutique', shop] };
 function go(p) { location.hash = p; }
 async function route() {
   const p = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'home';
@@ -88,7 +88,7 @@ async function products(v) {
 }
 function productForm(id) {
   ProductEditor.open({ product: PRODUCTS.find(x => x.id === id), categories: ME.categories,
-    save: d => api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d).then(() => route()) });
+    save: d => api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d), fileUrl: pid => `/vendor/api/products/${pid}/file`, done: route });
 }
 async function delProduct(id) { if (confirm('Supprimer ce produit ?')) { await api('/api/products/' + id, 'DELETE'); route(); } }
 
@@ -104,6 +104,22 @@ async function orders(v, status = '') {
     <td><select onchange="api('/api/orders/${o.id}/status','PUT',{status:this.value}).then(()=>toast('Statut mis à jour'))">
     ${ME.statuses.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${LABEL[s]}</option>`).join('')}</select></td></tr>`).join('')
     || '<tr><td colspan=5 class="mut">Aucune commande pour le moment</td></tr>'}</table></div>`;
+}
+
+// ---------- Ventes numériques ----------
+async function digitalSales(v) {
+  const rows = await api('/api/digital-sales');
+  const ST = { paid: '✅ Payé', pending: '⏳ En attente', failed: '❌ Échoué' };
+  const paid = rows.filter(r => r.status === 'paid'), total = {};
+  paid.forEach(r => total[r.currency] = (total[r.currency] || 0) + r.amount);
+  v.innerHTML = `<div class="grid"><div class="card kpi"><b>${paid.length}</b><span>Ventes payées</span></div>
+    <div class="card kpi"><b>${Object.entries(total).map(([c, n]) => n.toLocaleString('fr-FR') + ' ' + c).join(' + ') || '0'}</b><span>Encaissé en ligne</span></div>
+    <div class="card kpi"><b>${rows.filter(r => r.status === 'pending').length}</b><span>En attente de paiement</span></div></div>
+  <div class="card tw"><table><tr><th>Date</th><th>Produit</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Statut</th><th>Téléch.</th></tr>
+  ${rows.map(r => `<tr><td>${esc(r.paid_at || r.created_at)}</td><td>${esc(r.product_name)}${r.vendor ? `<br><span class="mut">🏪 ${esc(r.vendor)}</span>` : ''}</td>
+    <td><b>${esc(r.name)}</b><br>${esc(r.phone)}${r.email ? '<br>' + esc(r.email) : ''}</td><td>${r.amount} ${esc(r.currency)}</td>
+    <td>${r.method === 'card' ? '💳 Carte' : '📱 Mobile Money'}</td><td>${ST[r.status] || esc(r.status)}</td><td>${r.downloads}</td></tr>`).join('')
+    || '<tr><td colspan=7 class="mut">Aucune vente numérique pour le moment</td></tr>'}</table></div>`;
 }
 
 // ---------- Ma boutique ----------

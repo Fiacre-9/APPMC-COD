@@ -80,6 +80,14 @@ Synchronisation automatique également toutes les 5 min.
 - Fichiers : `src/routes/pwa.js` (manifestes), `public/sw.js` (service worker), `public/pwa.js` (bouton/guide d'installation), `public/icons/`.
 - Après une modification des fichiers du site, augmenter `VERSION` dans `public/sw.js` pour vider les anciens caches.
 
+## Produits numériques — paiement en ligne FlexPay
+- Dans l'éditeur de produit : **Type → 📥 Numérique**, puis fichier à livrer (PDF, EPUB, ZIP, MP3, MP4, Office… 100 Mo max, stocké hors du dossier public) **ou** lien d'accès, et instructions affichées après paiement.
+- Page produit : formulaire **Mobile Money** (M-Pesa, Orange, Airtel, Afrimoney — le client valide avec son code PIN) ou **carte bancaire** (redirection vers la page sécurisée FlexPay). Les produits physiques restent en paiement à la livraison, sans changement.
+- Après paiement : page reçu `/achat/<référence>?k=<clé>` avec bouton **Télécharger** (20 téléchargements max), e-mail du lien si SMTP configuré, 🔔 notification vendeur + admin, événement Meta Purchase.
+- Sécurité : le paiement n'est validé qu'après **vérification auprès de FlexPay** (le rappel seul ne suffit pas), montant et devise contrôlés ; lien de téléchargement personnel et secret.
+- Ventes séparées des commandes COD : **📥 Ventes numériques** dans l'admin et l'espace vendeur.
+- Configuration (variables d'environnement) : `FLEXPAY_MERCHANT` (code marchand) et `FLEXPAY_TOKEN` (jeton Bearer). Devise de la boutique : USD ou CDF (Admin → Marketing). Codes de statut FlexPay interprétés dans `src/flexpay.js` (`check`).
+
 ## Marketing Meta (Facebook / Instagram) — Admin → 📣 Marketing
 - **Catégories** gérées par l'admin (icône, nom, catégorie Google transmise à Meta) : utilisées par la boutique, les vendeurs et le catalogue.
 - **Catalogue** : flux programmé `https://votre-app/feeds/meta.csv` (Gestionnaire de ventes, toutes les heures, sans jeton) **ou** synchronisation directe par l'API (bouton + automatique à chaque modification de produit + chaque heure ; les produits masqués sont retirés).

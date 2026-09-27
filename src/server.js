@@ -75,6 +75,20 @@ app.use((err, req, res, _next) => {
 
 // ---------- Tâches planifiées ----------
 cron.schedule('*/10 * * * *', () => S.runDelayedAutomations());
+
+// Produit numérique payé (FlexPay) : notification vendeur + admin, événement Meta, e-mail du lien au client
+require('./digital').setOnPaid((sale) => {
+  const push = require('./push'), meta = require('./meta');
+  const amount = `${sale.amount} ${sale.currency}`, note = { title: `💰 Vente numérique payée`, body: `${sale.product_name} — ${amount} · ${sale.name}`, tag: `vente-${sale.id}` };
+  if (sale.vendor_id) push.notify('vendor', sale.vendor_id, { ...note, url: '/vendeur/#digital' });
+  push.notify('admin', null, { ...note, url: '/#digital' });
+  meta.capi('Purchase', { eventId: `digital-${sale.id}`, phone: sale.phone, name: sale.name, value: sale.amount, contentIds: [sale.product_id] });
+  if (sale.email && conn.email.enabled()) {
+    const link = `${(process.env.BASE_URL || '').replace(/\/$/, '')}/achat/${sale.reference}?k=${sale.token}`;
+    conn.send('email', sale.email, `Bonjour ${sale.name},\n\nMerci pour votre achat « ${sale.product_name} » (${amount}).\nTéléchargez-le ici : ${link}\n\nGardez ce lien, il permet de télécharger à nouveau.`,
+      `Votre achat : ${sale.product_name}`).catch(e => console.error('[email]', e.message));
+  }
+});
 // Catalogue Meta : resynchronisation complète chaque heure (stock, prix) si la connexion API est configurée
 cron.schedule('17 * * * *', () => { const m = require('./meta'), c = m.cfg(); if (c.autosync && c.catalog && c.token) m.sync().catch(e => console.error('[meta]', e.message)); });
 cron.schedule('*/5 * * * *', async () => {

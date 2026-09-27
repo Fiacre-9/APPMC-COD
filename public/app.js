@@ -32,7 +32,7 @@ async function logout() { await api('/auth/logout', 'POST'); showLogin(); }
 const PAGES = {
   dashboard: ['📊 Tableau de bord', dashboard], orders: ['📦 Commandes COD', orders], crm: ['👥 CRM Clients', crm],
   vendors: ['🏪 Vendeurs', vendors], agents: ['☎️ Agents', agents], couriers: ['🚚 Livreurs', couriers], stock: ['🏷️ Stock', stock], channels: ['📣 Canaux de vente', channels],
-  marketing: ['📣 Marketing', marketing], stats: ['📈 Statistiques', stats], kanban: ['🗂️ Pipeline Kanban', kanban], automations: ['⚡ Automatisations', automations],
+  digital: ['📥 Ventes numériques', digitalSales], marketing: ['📣 Marketing', marketing], stats: ['📈 Statistiques', stats], kanban: ['🗂️ Pipeline Kanban', kanban], automations: ['⚡ Automatisations', automations],
   tracking: ['📍 Tracking GPS', tracking], sync: ['🔄 Synchronisation', sync], settings: ['⚙️ Paramètres', settings],
 };
 function go(p) { location.hash = p; }
@@ -221,11 +221,27 @@ async function stock(v) {
 async function adminProduct(id) {
   const [cats, vendors] = await Promise.all([api('/api/categories'), api('/api/vendors')]);
   ProductEditor.open({ product: PRODS.find(x => x.id === id), categories: cats, vendors,
-    save: d => api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d).then(() => route()) });
+    save: d => api('/api/products' + (id ? '/' + id : ''), id ? 'PUT' : 'POST', d), fileUrl: pid => `/api/products/${pid}/file`, done: route });
 }
 async function adminDelProduct(id) {
   if (!confirm('Supprimer ce produit ? (masqué s\'il a déjà des commandes)')) return;
   await api('/api/products/' + id, 'DELETE'); route();
+}
+
+// ---------- Ventes numériques (payées en ligne via FlexPay) ----------
+async function digitalSales(v) {
+  const rows = await api('/api/digital-sales');
+  const ST = { paid: '✅ Payé', pending: '⏳ En attente', failed: '❌ Échoué' };
+  const paid = rows.filter(r => r.status === 'paid'), total = {};
+  paid.forEach(r => total[r.currency] = (total[r.currency] || 0) + r.amount);
+  v.innerHTML = `<div class="grid"><div class="card kpi"><b>${paid.length}</b><span>Ventes payées</span></div>
+    <div class="card kpi"><b>${Object.entries(total).map(([c, n]) => n.toLocaleString('fr-FR') + ' ' + c).join(' + ') || '0'}</b><span>Encaissé en ligne</span></div>
+    <div class="card kpi"><b>${rows.filter(r => r.status === 'pending').length}</b><span>En attente de paiement</span></div></div>
+  <div class="card tw"><table><tr><th>Date</th><th>Produit</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Statut</th><th>Téléch.</th></tr>
+  ${rows.map(r => `<tr><td>${esc(r.paid_at || r.created_at)}</td><td>${esc(r.product_name)}${r.vendor ? `<br><span class="mut">🏪 ${esc(r.vendor)}</span>` : ''}</td>
+    <td><b>${esc(r.name)}</b><br>${esc(r.phone)}${r.email ? '<br>' + esc(r.email) : ''}</td><td>${r.amount} ${esc(r.currency)}</td>
+    <td>${r.method === 'card' ? '💳 Carte' : '📱 Mobile Money'}</td><td>${ST[r.status] || esc(r.status)}</td><td>${r.downloads}</td></tr>`).join('')
+    || '<tr><td colspan=7 class="mut">Aucune vente numérique pour le moment</td></tr>'}</table></div>`;
 }
 
 // ---------- Vendeurs (multivendeur) ----------

@@ -3,7 +3,7 @@ const { db, categories } = require('./db');
 const S = require('./services');
 const { saveImage } = require('./uploads');
 
-const FIELDS = ['name', 'price', 'compare_price', 'stock', 'short_description', 'description', 'active', 'category', 'options'];
+const FIELDS = ['name', 'price', 'compare_price', 'stock', 'short_description', 'description', 'active', 'category', 'options', 'type', 'digital_url', 'digital_note'];
 const MAX_PHOTOS = 6;
 const pick = (o, keys) => keys.reduce((a, k) => (o[k] !== undefined && (a[k] = o[k]), a), {});
 const photosOf = (p) => { try { const g = JSON.parse(p.gallery || '[]'); return g.length ? g : (p.image ? [p.image] : []); } catch { return p.image ? [p.image] : []; } };
@@ -18,6 +18,9 @@ function productInput(body, current = null) {
   if (d.stock !== undefined) d.stock = Math.max(0, Math.floor(+d.stock || 0));
   if (d.active !== undefined) d.active = d.active && d.active !== '0' ? 1 : 0;
   if (d.options !== undefined) d.options = JSON.stringify(S.normalizeOptions(d.options));
+  if (d.type !== undefined && !['physical', 'digital'].includes(d.type)) throw new Error('Type de produit invalide');
+  if (d.digital_url) { d.digital_url = String(d.digital_url).trim(); if (!/^https:\/\/\S+$/.test(d.digital_url)) throw new Error('Lien de téléchargement : adresse https:// complète'); }
+  if (d.digital_note !== undefined) d.digital_note = String(d.digital_note).slice(0, 2000);
   if (d.category && !categories().some(c => c.slug === d.category)) throw new Error('Catégorie inconnue');
   // Photos : on garde celles déjà enregistrées pour ce produit (gallery_keep) + les nouvelles (gallery_new, data URL)
   if (body.gallery_keep !== undefined || body.gallery_new !== undefined || body.image_data) {
@@ -47,4 +50,12 @@ function removeProduct(p) {
   else db.prepare('DELETE FROM products WHERE id=?').run(p.id);
 }
 
-module.exports = { productInput, createProduct, updateProduct, removeProduct, photosOf };
+// Fichier du produit numérique (corps brut) : remplace l'ancien fichier
+function setDigitalFile(p, buffer, name) {
+  const D = require('./digital'), f = D.saveFile(buffer, name), old = D.filePath(p.digital_file);
+  db.prepare('UPDATE products SET digital_file=?, digital_name=? WHERE id=?').run(f.digital_file, f.digital_name, p.id);
+  if (old) require('fs').rm(old, { force: true }, () => {});
+  return f.digital_name;
+}
+
+module.exports = { setDigitalFile, productInput, createProduct, updateProduct, removeProduct, photosOf };

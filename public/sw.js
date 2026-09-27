@@ -1,10 +1,11 @@
 // Service worker Mireb : applications installables + consultation hors connexion.
 // Les données (API, commandes, connexions) passent toujours par le réseau et ne sont jamais mises en cache.
-const VERSION = 'mireb-v5';
+const VERSION = 'mireb-v6';
 const STATIC = `${VERSION}-static`, PAGES = `${VERSION}-pages`, IMAGES = `${VERSION}-images`;
 const PRECACHE = ['/offline.html', '/style.css', '/pwa.js', '/widget.js', '/markdown.js', '/icon.svg',
   '/icons/boutique-192.png', '/icons/vendeur-192.png', '/icons/livreur-192.png', '/icons/admin-192.png'];
-const NETWORK_ONLY = /^\/(api|vendor\/(api|auth)|public|auth|health|manifests)(\/|$)/;
+// Achats numériques (reçu, téléchargement) : jamais en cache (lien personnel, fichiers volumineux)
+const NETWORK_ONLY = /^\/(api|vendor\/(api|auth)|public|auth|health|manifests|achat|telecharger)(\/|$)/;
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(STATIC).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting()));

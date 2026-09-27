@@ -4,6 +4,7 @@ const { db, getSetting } = require('../db');
 const S = require('../services');
 const push = require('../push');
 const meta = require('../meta');
+const digital = require('../digital');
 
 // Formulaire COD public (landing page, widget, page produit)
 router.post('/lead', (req, res) => {
@@ -14,6 +15,9 @@ router.post('/lead', (req, res) => {
   if (product_id && db.prepare(`SELECT 1 FROM products p LEFT JOIN vendors v ON v.id=p.vendor_id
     WHERE (p.id=? OR p.wc_id=?) AND (p.active=0 OR v.active=0)`).get(product_id, product_id))
     return res.status(400).json({ error: 'Ce produit n\'est plus disponible' });
+  // Produit numérique : payé en ligne (FlexPay), jamais en paiement à la livraison
+  if (product_id && db.prepare("SELECT 1 FROM products WHERE (id=? OR wc_id=?) AND type='digital'").get(product_id, product_id))
+    return res.status(400).json({ error: 'Ce produit numérique se paie en ligne sur sa page produit' });
   let id;
   try { id = S.createOrder({ name, phone, address, city, product_id, qty: Math.min(99, +qty || 1), options, strictOptions: true, channel_id: canal || null }); }
   catch (e) { return res.status(400).json({ error: e.message }); }
@@ -32,6 +36,23 @@ router.get('/form-config', (req, res) => res.json({ color: getSetting('form_colo
     const p = req.query.product_id ? db.prepare('SELECT id,name,price,compare_price,options FROM products WHERE id=? OR wc_id=?').get(req.query.product_id, req.query.product_id) : null;
     return p ? { id: p.id, name: p.name, price: p.price, compare_price: p.compare_price, options: S.productOptions(p) } : null;
   })() }));
+
+// ---------- Produits numériques : paiement en ligne FlexPay ----------
+router.post('/digital/checkout', async (req, res) => {
+  try { res.json({ ok: true, ...(await digital.checkout(req.body)) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.get('/digital/status/:ref', async (req, res) => {
+  let s = digital.bySale(req.params.ref, req.query.k); if (!s) return res.status(404).json({ error: 'Achat introuvable' });
+  s = await digital.refresh(s);
+  res.json({ status: s.status, download: s.status === 'paid' ? `/telecharger/${s.reference}?k=${s.token}` : null });
+});
+// Rappel de FlexPay : on ne le croit pas sur parole, on revérifie la transaction auprès de FlexPay
+router.post('/flexpay/callback', async (req, res) => {
+  const b = req.body || {}, s = db.prepare('SELECT * FROM digital_sales WHERE reference=? OR (order_number<>\'\' AND order_number=?)').get(String(b.reference || ''), String(b.orderNumber || ''));
+  if (s) { db.prepare('UPDATE digital_sales SET last_check=NULL WHERE id=?').run(s.id); await digital.refresh(s).catch(() => {}); }
+  res.json({ ok: true });
+});
 
 // ---------- Notifications push ----------
 router.get('/push/key', (req, res) => res.json({ key: push.publicKey }));

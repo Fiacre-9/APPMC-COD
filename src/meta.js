@@ -31,7 +31,7 @@ function catalogItems() {
     items.push({
       id: String(p.id), title: String(p.name).slice(0, 150),
       description: (plain(p.short_description) || plain(p.description) || p.name).slice(0, 5000),
-      availability: p.stock > 0 ? 'in stock' : 'out of stock', condition: 'new',
+      availability: p.type === 'digital' || p.stock > 0 ? 'in stock' : 'out of stock', condition: 'new',
       price: money(promo ? p.compare_price : p.price, c.currency), ...(promo ? { sale_price: money(p.price, c.currency) } : {}),
       link: `${c.base}/p/${p.slug}?utm_source=facebook&utm_medium=catalog`, image_link: imgs[0],
       ...(imgs.length > 1 ? { additional_image_link: imgs.slice(1, 10) } : {}), brand: (p.shop_name || c.brand).slice(0, 100),

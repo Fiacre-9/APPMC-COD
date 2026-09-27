@@ -4,6 +4,8 @@ const router = require('express').Router();
 const { db, getSetting, categories, STATUSES } = require('../db');
 const md = require('../../public/markdown.js');
 const push = require('../push');
+const flexpay = require('../flexpay');
+const digital = require('../digital');
 
 const esc = md.escape;
 const money = n => `${(+n || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${process.env.CURRENCY || '$'}`;
@@ -61,7 +63,7 @@ a{color:inherit;text-decoration:none}img{max-width:100%;display:block}
 .card{background:#fff;display:flex;flex-direction:column;position:relative;overflow:hidden;transition:box-shadow .15s}.card:hover{z-index:1;box-shadow:var(--sh)}
 .iw{position:relative;background:#f9f9f9;aspect-ratio:1;overflow:hidden}.iw img{width:100%;height:100%;object-fit:cover;transition:transform .3s}
 .card:hover .iw img{transform:scale(1.04)}.noimg{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:48px;color:#cbd5e1}
-.bdg{position:absolute;top:6px;left:6px;background:var(--a);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;z-index:1}.bdg.new{background:var(--p)}
+.bdg.dg{left:auto;right:6px;background:#0F172A}.bdg{position:absolute;top:6px;left:6px;background:var(--a);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;z-index:1}.bdg.new{background:var(--p)}
 .cb{padding:8px 10px 10px;flex:1;display:flex;flex-direction:column}
 .ct{font-size:12px;font-weight:500;line-height:1.4;margin:0 0 6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .pr{display:flex;align-items:center;gap:6px;margin-top:auto;flex-wrap:wrap}.pn{font-size:14px;font-weight:800;color:var(--a)}.po{font-size:11px;color:#aaa;text-decoration:line-through}
@@ -106,6 +108,14 @@ a{color:inherit;text-decoration:none}img{max-width:100%;display:block}
 .steps li i{width:26px;height:26px;border-radius:50%;background:var(--b);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:12px;color:#fff;flex-shrink:0}
 .steps li.ok{color:var(--dk)}.steps li.ok i{background:var(--ok)}.steps li.ko i{background:var(--a)}.steps small{font-weight:400;color:var(--g);margin-left:auto}
 .err{color:var(--a);font-weight:600}
+.dform{display:grid;gap:10px;border:2px solid var(--a);border-radius:12px;padding:16px;scroll-margin-top:calc(var(--h) + 12px)}
+.dform input[name=name],.dform input[type=tel],.dform input[type=email]{padding:12px;border:1px solid #ccc;border-radius:8px;font:inherit;font-size:16px}
+.dform .btn{justify-content:center;font-size:16px;padding:14px}.dtot{background:var(--l);border:1px dashed #cbd5e1;border-radius:8px;padding:10px 12px}
+.dtot b{color:var(--a);font-size:18px}.dpay{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dpay label{border:2px solid var(--b);border-radius:10px;padding:10px;cursor:pointer;font-weight:700;font-size:14px;display:flex;flex-direction:column;gap:2px}
+.dpay label:has(input:checked){border-color:var(--p);background:#EEF2FF}.dpay input{display:none}.dpay small{font-weight:500;color:var(--g);font-size:11px}
+.dnote{color:var(--g);text-align:center}.receipt{text-align:center}.receipt .btn{justify-content:center;margin:8px 0}
+.spin{width:38px;height:38px;border:4px solid var(--b);border-top-color:var(--p);border-radius:50%;margin:18px auto;animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
 /* Pied de page + menu du bas */
 .ft{background:var(--dk);color:#cbd5e1;padding:24px 16px;text-align:center;font-size:12px;margin-top:8px}.ft b{color:#fff;font-size:15px}.ft a{color:#fff;text-decoration:underline}
 .tr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#fff;padding:14px 10px;text-align:center;font-size:11px;font-weight:600;border-top:1px solid var(--b)}
@@ -169,9 +179,9 @@ const isNewP = (p, since = newSince()) => (p.created_at || '') >= since;
 function card(p, isNew = isNewP(p)) {
   const off = pct(p), img = photos(p)[0];
   return `<div class="card"><a href="/p/${esc(p.slug)}"><div class="iw">${img ? `<img src="${esc(img)}" alt="${esc(p.name)}" loading="lazy" decoding="async">` : '<div class="noimg">📦</div>'}
-    ${off ? `<span class="bdg">-${off}%</span>` : isNew ? '<span class="bdg new">NOUVEAU</span>' : ''}</div>
+    ${off ? `<span class="bdg">-${off}%</span>` : isNew ? '<span class="bdg new">NOUVEAU</span>' : ''}${p.type === 'digital' ? '<span class="bdg dg">📥 NUMÉRIQUE</span>' : ''}</div>
     <div class="cb"><p class="ct">${esc(p.name)}</p><div class="pr"><span class="pn">${money(p.price)}</span>${off ? `<s class="po">${money(p.compare_price)}</s>` : ''}</div></div></a>
-    <a href="/p/${esc(p.slug)}#mireb-commande" class="cod">🛒 Commander</a></div>`;
+    <a href="/p/${esc(p.slug)}#mireb-commande" class="cod">${p.type === 'digital' ? '📥 Acheter' : '🛒 Commander'}</a></div>`;
 }
 const section = (title, content, link = '', id = '') => `<section class="sec"${id ? ` id="${id}"` : ''}><div class="sh"><h2 class="st">${title}</h2>${link}</div>${content}</section>`;
 const grid = (list, empty = 'Aucun produit pour le moment.') => list.length ? `<div class="grid">${list.map(p => card(p)).join('')}</div>` : `<p class="empty">${empty}</p>`;
@@ -247,18 +257,18 @@ router.get('/p/:slug', (req, res) => {
     currency: (getSetting('currency_code') || 'USD').toUpperCase() }];
   res.send(layout({ title: p.name, desc: plain, image: imgs[0], nav: 'product', currentCat: p.category, track, body: `<div class="sp">
     <div class="gal"><div class="mi">${imgs[0] ? `<img id="mimg" src="${esc(imgs[0])}" alt="${esc(p.name)}" fetchpriority="high">` : '<div class="noimg" style="height:100%">📦</div>'}
-      ${p.stock > 0 ? '<span class="stk">✅ En stock</span>' : ''}${off ? `<span class="spc">-${off}%</span>` : ''}</div>
+      ${p.type === 'digital' ? '<span class="stk">📥 Produit numérique</span>' : p.stock > 0 ? '<span class="stk">✅ En stock</span>' : ''}${off ? `<span class="spc">-${off}%</span>` : ''}</div>
       ${imgs.length > 1 ? `<div class="th">${imgs.map((u, i) => `<button type="button" class="${i ? '' : 'on'}" data-src="${esc(u)}" aria-label="Photo ${i + 1}"><img src="${esc(u)}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}</div>
     <div class="inf">${c ? `<p class="cat"><a href="/boutique?cat=${c.slug}">${c.icon} ${esc(c.name)}</a></p>` : ''}<h1>${esc(p.name)}</h1>
       <div class="spr"><b>${money(p.price)}</b>${off ? `<s>${money(p.compare_price)}</s><span class="save">Économisez ${money(p.compare_price - p.price)}</span>` : ''}</div>
       ${p.vslug ? `<p class="by">Vendu par <a href="/boutique/${esc(p.vslug)}">${esc(p.shop_name)}</a></p>` : ''}
       ${p.short_description ? `<div class="short md">${md.render(p.short_description)}</div>` : ''}
-      <div id="mireb-commande" data-mireb-form data-compact data-product="${p.id}" data-canal="${canal}"></div>
-      <div class="perks"><span class="perk b">🚚 Livraison rapide</span><span class="perk g">💵 Paiement à la réception</span>${p.stock > 0 && p.stock <= 5 ? `<span class="perk o">🔥 Plus que ${p.stock} en stock</span>` : ''}</div></div></div>
+      ${p.type === 'digital' ? digitalForm(p, canal) : `<div id="mireb-commande" data-mireb-form data-compact data-product="${p.id}" data-canal="${canal}"></div>
+      <div class="perks"><span class="perk b">🚚 Livraison rapide</span><span class="perk g">💵 Paiement à la réception</span>${p.stock > 0 && p.stock <= 5 ? `<span class="perk o">🔥 Plus que ${p.stock} en stock</span>` : ''}</div>`}</div></div>
     ${p.description ? `<section class="desc"><h2 class="dt">Description du produit</h2><div class="md">${md.render(p.description)}</div></section>
-      <div class="cta"><a href="#mireb-commande" data-goto-form>🛒 Commander maintenant — paiement à la livraison</a></div>` : ''}
+      <div class="cta"><a href="#mireb-commande" data-goto-form>${p.type === 'digital' ? '📥 Acheter maintenant — téléchargement immédiat' : '🛒 Commander maintenant — paiement à la livraison'}</a></div>` : ''}
     ${related.length ? section('Produits similaires', `<div class="scroll">${related.map(r => card(r)).join('')}</div>`) : ''}
-    <script src="/widget.js"></script>` }));
+    <script src="${p.type === 'digital' ? '/digital.js' : '/widget.js'}"></script>` }));
 });
 
 // ---------- Boutique d'un vendeur ----------
@@ -297,6 +307,54 @@ router.get('/suivi', (req, res) => {
     <p>Entrez le numéro reçu après votre commande et votre téléphone.</p>
     <form><input name="n" inputmode="numeric" placeholder="Numéro de commande (ex : 125)" value="${esc(n)}" required>
     <input name="tel" type="tel" placeholder="Votre téléphone" value="${esc(req.query.tel || '')}" required><button class="btn r">Voir le suivi</button></form>${result}</div>` }));
+});
+
+// ---------- Produits numériques : formulaire de paiement, reçu, téléchargement ----------
+function digitalForm(p, canal) {
+  if (!flexpay.enabled()) return `<div id="mireb-commande" class="dform"><p class="err">Paiement en ligne bientôt disponible pour ce produit.</p></div>`;
+  return `<form id="mireb-commande" class="dform" data-product="${p.id}" data-canal="${canal}">
+    <div class="dtot">Total : <b>${money(p.price)}</b> <small>— payé en ligne, téléchargement immédiat</small></div>
+    <div class="dpay"><label><input type="radio" name="method" value="mobile" checked> 📱 Mobile Money<small>M-Pesa · Orange · Airtel · Afrimoney</small></label>
+      <label><input type="radio" name="method" value="card"> 💳 Carte bancaire<small>Visa · Mastercard</small></label></div>
+    <input name="name" placeholder="Nom complet" required autocomplete="name">
+    <input name="phone" type="tel" placeholder="Numéro Mobile Money (ex : 0812345678)" autocomplete="tel" required>
+    <input name="email" type="email" placeholder="Email (facultatif, pour recevoir le lien)" autocomplete="email">
+    <button class="btn r">🔒 Payer ${money(p.price)}</button><div class="derr err" role="alert"></div>
+    <small class="dnote">Paiement sécurisé par FlexPay. Mobile Money : validez la demande avec votre code PIN sur votre téléphone.</small></form>
+    <div class="perks"><span class="perk b">📥 Téléchargement immédiat</span><span class="perk g">🔒 Paiement sécurisé</span></div>`;
+}
+
+router.get('/achat/:ref', async (req, res) => {
+  let s = digital.bySale(req.params.ref, req.query.k);
+  if (!s) return res.status(404).send(layout({ title: 'Achat introuvable', catBar: false, body: '<p class="empty">Lien d\'achat invalide.</p>' }));
+  s = await digital.refresh(s);
+  const p = db.prepare('SELECT digital_note, digital_url, digital_file FROM products WHERE id=?').get(s.product_id) || {};
+  const dl = `/telecharger/${s.reference}?k=${s.token}`;
+  const body = s.status === 'paid' ? `<div class="box receipt"><h1>✅ Paiement reçu</h1><p>Merci ${esc(s.name)} ! Votre achat <b>${esc(s.product_name)}</b> (${money(s.amount)}) est confirmé.</p>
+      <a class="btn r" href="${dl}">📥 Télécharger${p.digital_url && !p.digital_file ? ' / accéder' : ''}</a>
+      ${p.digital_note ? `<div class="md" style="margin-top:14px">${md.render(p.digital_note)}</div>` : ''}
+      <p class="mut">🔖 Gardez cette page dans vos favoris : ce lien vous permet de télécharger à nouveau (${digital.MAX_DOWNLOADS} fois maximum). Référence : ${esc(s.reference)}</p></div>`
+    : s.status === 'failed' ? `<div class="box receipt"><h1>❌ Paiement non abouti</h1><p>Le paiement de <b>${esc(s.product_name)}</b> a échoué ou a été annulé. Aucun montant n'a été validé.</p>
+      <a class="btn r" href="javascript:history.back()">Réessayer</a></div>`
+    : `<div class="box receipt"><h1>⏳ En attente du paiement…</h1><p>${s.method === 'mobile' ? `Une demande de paiement de <b>${money(s.amount)}</b> a été envoyée au <b>${esc(s.phone)}</b>.<br>Validez-la avec votre <b>code PIN</b> sur votre téléphone.` : 'Terminez le paiement par carte.'}</p>
+      <div class="spin"></div><p class="mut">Cette page se met à jour toute seule. Référence : ${esc(s.reference)}</p></div>
+      <script>(function poll(n){setTimeout(function(){fetch('/public/digital/status/${s.reference}?k=${s.token}').then(function(r){return r.json()}).then(function(d){
+        if(d.status!=='pending')location.reload();else if(n<90)poll(n+1)}).catch(function(){if(n<90)poll(n+1)})},4000)})(0)</script>`;
+  const pixel = s.status === 'paid' ? ['Purchase', { value: s.amount, currency: s.currency, content_ids: [String(s.product_id)], content_type: 'product' }] : null;
+  res.set('Cache-Control', 'no-store').send(layout({ title: `Achat ${s.reference}`, catBar: false, track: pixel, body }));
+});
+
+router.get('/telecharger/:ref', (req, res) => {
+  const s = digital.bySale(req.params.ref, req.query.k);
+  if (!s || s.status !== 'paid') return res.status(403).send(layout({ title: 'Accès refusé', catBar: false, body: '<p class="empty">Ce lien n\'est pas valide ou le paiement n\'est pas confirmé.</p>' }));
+  if (s.downloads >= digital.MAX_DOWNLOADS) return res.status(403).send(layout({ title: 'Limite atteinte', catBar: false, body: '<p class="empty">Nombre maximum de téléchargements atteint. Contactez le vendeur.</p>' }));
+  const p = db.prepare('SELECT digital_file, digital_name, digital_url FROM products WHERE id=?').get(s.product_id) || {};
+  const file = digital.filePath(p.digital_file);
+  db.prepare('UPDATE digital_sales SET downloads=downloads+1 WHERE id=?').run(s.id);
+  res.set('Cache-Control', 'no-store');
+  if (file && require('fs').existsSync(file)) return res.download(file, p.digital_name || 'fichier');
+  if (p.digital_url) return res.redirect(p.digital_url);
+  res.status(404).send(layout({ title: 'Fichier indisponible', catBar: false, body: '<p class="empty">Fichier momentanément indisponible. Contactez le vendeur.</p>' }));
 });
 
 // ---------- Politique de confidentialité (obligatoire pour le Google Play Store) ----------

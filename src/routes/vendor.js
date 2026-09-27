@@ -75,6 +75,12 @@ module.exports = (SECRET) => {
   router.put('/api/products/:id', wrap((req, res) => { P.updateProduct(own(req), req.body); meta.scheduleSync(); res.json({ ok: true }); }));
   router.delete('/api/products/:id', wrap((req, res) => { P.removeProduct(own(req)); meta.scheduleSync(); res.json({ ok: true }); }));
 
+  router.post('/api/products/:id/file', require('express').raw({ type: () => true, limit: '100mb' }), wrap((req, res) => {
+    res.json({ name: P.setDigitalFile(own(req), req.body, decodeURIComponent(req.get('x-file-name') || '')) });
+  }));
+  router.get('/api/digital-sales', (req, res) => res.json(db.prepare(`SELECT id,created_at,paid_at,product_name,name,phone,email,amount,currency,method,status,downloads
+    FROM digital_sales WHERE vendor_id=? ORDER BY id DESC LIMIT 500`).all(req.vendor.id)));
+
   router.post('/api/push/subscribe', wrap((req, res) => { push.subscribe(req.body.subscription, 'vendor', req.vendor.id); res.json({ ok: true }); }));
 
   // ---------- Commandes ----------

@@ -126,6 +126,13 @@ router.post('/products/:id/image', wrap((req, res) => {
   db.prepare('UPDATE products SET image=? WHERE id=?').run(require('../uploads').saveImage(req.body.image_data), req.params.id); res.json({ ok: true });
 }));
 
+router.post('/products/:id/file', require('express').raw({ type: () => true, limit: '100mb' }), wrap((req, res) => {
+  const p = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id); if (!p) throw new Error('Produit introuvable');
+  res.json({ name: P.setDigitalFile(p, req.body, decodeURIComponent(req.get('x-file-name') || '')) });
+}));
+router.get('/digital-sales', (req, res) => res.json(db.prepare(`SELECT d.*, v.shop_name vendor FROM digital_sales d LEFT JOIN vendors v ON v.id=d.vendor_id
+  ORDER BY d.id DESC LIMIT 500`).all().map(({ token, ...s }) => s)));
+
 // ---------- Vendeurs (multivendeur) ----------
 router.get('/vendors', (req, res) => res.json(db.prepare(`SELECT v.id, v.shop_name, v.slug, v.email, v.phone, v.active, v.created_at,
   (SELECT COUNT(*) FROM products WHERE vendor_id=v.id) products, (SELECT COUNT(*) FROM orders WHERE vendor_id=v.id) orders,
