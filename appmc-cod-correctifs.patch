@@ -1,0 +1,105 @@
+diff --git a/package-lock.json b/package-lock.json
+index c70c3fe..9d85be4 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -74,9 +74,9 @@
+       "license": "MIT"
+     },
+     "node_modules/body-parser": {
+-      "version": "1.20.8",
+-      "resolved": "https://registry.npmjs.org/body-parser/-/body-parser-1.20.8.tgz",
+-      "integrity": "sha512-JNcyFQ64OiijEkPzUBTCe+hyPXUD/3LEldGQ6iF5LR1w00mx9o7xtDWHXBY2iItjdCFGoilOLNQbH943ut7pHA==",
++      "version": "1.20.9",
++      "resolved": "https://registry.npmjs.org/body-parser/-/body-parser-1.20.9.tgz",
++      "integrity": "sha512-FISIQxV5u91Y9gvuFq3q/tA/qTqLJn3AhRcEvyozyhJTh5OBFFtv827AdHU7Rbyct4r+Ba1/99oFa1Y3yuFsdw==",
+       "license": "MIT",
+       "dependencies": {
+         "bytes": "~3.1.2",
+@@ -769,9 +769,9 @@
+       }
+     },
+     "node_modules/nodemailer": {
+-      "version": "10.0.10",
+-      "resolved": "https://registry.npmjs.org/nodemailer/-/nodemailer-10.0.10.tgz",
+-      "integrity": "sha512-He9XskOFms62SyAKkLu8CcGcYHAo+BSHSsORI8s4PJH8qZgZY4L4lDfvyN0twvmbpyG+eGrxpyBlskj9d9rJ8A==",
++      "version": "10.3.1",
++      "resolved": "https://registry.npmjs.org/nodemailer/-/nodemailer-10.3.1.tgz",
++      "integrity": "sha512-uF0AFsJC07Y1vdW7p580DKAnh7rAO+4UPSSB3mDCPNDufoiaOebV6JmrzpxB14OjEEEiBsNdYoM2Y+fN8M7BBA==",
+       "license": "MIT-0",
+       "engines": {
+         "node": ">=20.0.0"
+@@ -834,9 +834,9 @@
+       }
+     },
+     "node_modules/qs": {
+-      "version": "6.16.0",
+-      "resolved": "https://registry.npmjs.org/qs/-/qs-6.16.0.tgz",
+-      "integrity": "sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==",
++      "version": "6.16.2",
++      "resolved": "https://registry.npmjs.org/qs/-/qs-6.16.2.tgz",
++      "integrity": "sha512-VYdnB5S7/0IeXzBacUtwNAaM6d7Y/PgYnNC7bJCI6meqA/OgnsQbZMtVW8Dt2D1PHgbHGtYmhSoEIgvt7xZ2ZA==",
+       "license": "BSD-3-Clause",
+       "dependencies": {
+         "es-define-property": "^1.0.1",
+diff --git a/public/widget.js b/public/widget.js
+index a6d233f..28c36ba 100644
+--- a/public/widget.js
++++ b/public/widget.js
+@@ -31,7 +31,7 @@
+         (p && !el.hasAttribute('data-compact') ? '<b style="font-size:18px">' + esc(el.getAttribute('data-titre') || p.name) + '</b><div>' + (el.getAttribute('data-prix-barre') ? '<s style="color:#888">' + esc(el.getAttribute('data-prix-barre')) + '</s> ' : '') + '<b style="color:' + col + ';font-size:20px">' + esc(el.getAttribute('data-prix') || money(p.price)) + '</b></div>' : '') +
+         variants + qtyRow +
+         '<small style="color:#555">' + esc(c.subtitle) + '</small>' +
+-        ['name|Nom complet', 'phone|Téléphone', 'address|Adresse complète', 'city|Ville'].map(function (f) { f = f.split('|');
++        ['name|Nom complet', 'phone|Téléphone (ex : 0812345678)', 'address|Adresse complète', 'city|Ville'].map(function (f) { f = f.split('|');
+           return '<input name="' + f[0] + '" placeholder="' + f[1] + '" ' + (f[0] !== 'city' ? 'required' : '') + (f[0] === 'phone' ? ' type="tel" autocomplete="tel"' : '') + ' style="' + inp + '">'; }).join('') +
+         '<button data-submit style="background:' + col + ';color:#fff;border:0;padding:14px;border-radius:8px;font-size:17px;font-weight:bold;cursor:pointer">' + esc(c.button) + '</button>' +
+         '<small style="text-align:center;color:#555">' + esc(c.guarantee) + '</small><div class="mireb-msg" style="color:#dc2626;font-weight:600"></div></form>';
+@@ -58,6 +58,10 @@
+         }
+       });
+       if (p) form.qty.addEventListener('input', refresh);
++      form.addEventListener('focusin', function () {
++        if (form._ic || !window.fbq || base !== location.origin) return; form._ic = 1;
++        fbq('track', 'InitiateCheckout', { content_type: 'product', content_ids: p ? [String(p.id)] : [], num_items: p ? (+form.qty.value || 1) : 1, value: p ? +p.price : 0, currency: c.currency === '$' ? 'USD' : (c.currency || 'USD') });
++      });
+       refresh();
+       el.querySelector('form').onsubmit = function (e) {
+         e.preventDefault(); var f = e.target, b = f.querySelector('[data-submit]'), d = Object.fromEntries(new FormData(f));
+@@ -65,7 +69,7 @@
+         d.options = {}; opts.forEach(function (g, gi) { d.options[g.name] = g.values[chosen[gi]].label; });
+         fetch(base + '/public/lead', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+           .then(function (r) { return r.json(); }).then(function (r) {
+-            if (!r.ok) { f.querySelector('.mireb-msg').textContent = r.error; b.disabled = false; return; }
++            if (!r.ok) { var m = f.querySelector('.mireb-msg'); m.textContent = r.error; b.disabled = false; if (m.scrollIntoView) m.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+             f.innerHTML = '<h3 style="color:' + col + '">✅ Commande reçue (n°' + r.id + ')</h3><p>' + esc(r.message) + '</p><p><a style="color:' + col + ';font-weight:bold" href="' + base + '/suivi?n=' + r.id + '">🚚 Suivre ma commande</a></p>';
+             // Pixel Meta sur notre site : même event_id que l'API Conversions du serveur (pas de double comptage)
+             if (window.fbq && base === location.origin) fbq('track', 'Purchase', { value: r.value, currency: r.currency, content_type: 'product',
+@@ -76,6 +80,10 @@
+               pb.style.cssText = 'background:#1A56DB;color:#fff;border:0;padding:12px 14px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;width:100%';
+               f.appendChild(pb); MirebPush.button(pb, '/public/push/subscribe', { order_id: r.id, token: r.track });
+             }
++          }).catch(function () {
++            // Réseau instable (données mobiles) : on ne laisse plus le bouton bloqué sans explication
++            var m = f.querySelector('.mireb-msg'); m.textContent = 'Connexion instable : votre commande n\'est pas encore envoyée. Appuyez de nouveau sur le bouton.';
++            b.disabled = false; if (m.scrollIntoView) m.scrollIntoView({ block: 'center', behavior: 'smooth' });
+           });
+       };
+     });
+diff --git a/src/routes/public.js b/src/routes/public.js
+index d369a2a..8ca91f9 100644
+--- a/src/routes/public.js
++++ b/src/routes/public.js
+@@ -8,9 +8,11 @@ const digital = require('../digital');
+ 
+ // Formulaire COD public (landing page, widget, page produit)
+ router.post('/lead', (req, res) => {
+-  const { name, phone, address, city, product_id, qty, canal, options } = req.body;
++  const { name, address, city, product_id, qty, canal, options } = req.body;
++  // Téléphone : on accepte espaces, points, tirets, parenthèses (ex. « +243 (0)81.234.5678 ») et on ne garde que chiffres et « + »
++  const phone = String(req.body.phone || '').replace(/[^\d+]/g, '');
+   if (!name || !phone || !address) return res.status(400).json({ error: 'Nom, téléphone et adresse sont obligatoires' });
+-  if (!/^[+\d][\d\s-]{7,}$/.test(phone)) return res.status(400).json({ error: 'Téléphone invalide' });
++  if (!/^\+?\d{8,15}$/.test(phone)) return res.status(400).json({ error: 'Téléphone invalide : entrez 8 à 15 chiffres (ex : 0812345678)' });
+   // Produit masqué par son vendeur ou vendeur suspendu : plus de commande possible
+   if (product_id && db.prepare(`SELECT 1 FROM products p LEFT JOIN vendors v ON v.id=p.vendor_id
+     WHERE (p.id=? OR p.wc_id=?) AND (p.active=0 OR v.active=0)`).get(product_id, product_id))
