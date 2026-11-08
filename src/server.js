@@ -28,6 +28,13 @@ if (!db.prepare('SELECT COUNT(*) n FROM users').get().n) {
   db.prepare('INSERT INTO users(email,password) VALUES(?,?)').run(process.env.ADMIN_EMAIL || 'admin@mireb.online',
     bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10));
 }
+// Réinitialisation ponctuelle du mot de passe admin : définir ADMIN_RESET=1 et ADMIN_PASSWORD dans les variables
+// d'environnement, redémarrer, puis SUPPRIMER ADMIN_RESET (sinon le mot de passe est réécrit à chaque démarrage).
+if (process.env.ADMIN_RESET === '1' && process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD.length >= 8) {
+  const r = db.prepare('UPDATE users SET password=? WHERE email=?').run(
+    bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10), process.env.ADMIN_EMAIL || 'admin@mireb.online');
+  console.warn(r.changes ? '🔑 Mot de passe admin réinitialisé (retirez ADMIN_RESET)' : '⚠️ ADMIN_RESET : aucun admin avec cet email');
+}
 // Modèles d'automatisation par défaut
 if (!db.prepare('SELECT COUNT(*) n FROM automations').get().n) {
   const ins = db.prepare('INSERT INTO automations(name,trigger,channel,target,template,delay_hours,active) VALUES(?,?,?,?,?,?,0)');
