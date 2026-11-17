@@ -170,10 +170,10 @@ async function couriers(v) {
     <td>${c.active}</td><td><b>${money(c.balance)}</b></td>
     <td><button class="sm" onclick="courierPay(${c.id})">💳 Paiement<button class="sm" onclick="inviteAccount('agent',${a.id})">✉️ Accès</button></button> <button class="sm gray" onclick='courierForm(${JSON.stringify(c).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
 }
-function courierForm<button class="sm" onclick="inviteAccount('courier',${c.id})">✉️ Accès</button>(c = {}) {
+function courierForm(c = {}) {
   modal(`<h3>${c.id ? 'Modifier' : 'Ajouter'} un livreur</h3><form class="f" onsubmit="event.preventDefault();api('/api/couriers${c.id ? '/' + c.id : ''}','${c.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
   <input name="name" placeholder="Nom" value="${esc(c.name)}" required><input name="company" placeholder="Société" value="${esc(c.company)}">
-  <input name="phone" placeholder="Téléphone" value="${esc(c.phone)}"><label>Tarif par colis<input name="fee_per_parcel" type="number" step="0.01" value="${c.fee_per_parcel ?? 0}"></label>
+  <input name="phone" placeholder="Téléphone"<button class="sm" onclick="inviteAccount('courier',${c.id})">✉️ Accès</button>value="${esc(c.phone)}"><label>Tarif par colis<input name="fee_per_parcel" type="number" step="0.01" value="${c.fee_per_parcel ?? 0}"></label>
   <input name="zones" placeholder="Zones : Kinshasa, Gombe, Lemba" value="${esc(c.zones)}"><button>Enregistrer</button></form>`);
 }
 function courierPay(id) {
