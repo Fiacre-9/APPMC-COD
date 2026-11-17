@@ -8,12 +8,13 @@ const cron = require('node-cron');
 const { db } = require('./db');
 const S = require('./services');
 const conn = require('./connectors');
-
+const accounts = require('./accounts');
 const SECRET = process.env.JWT_SECRET || 'dev-secret';
 const app = express();
 app.use(express.json({ limit: '2mb', verify: (req, _r, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.set('trust proxy', 1);
 
 // CORS pour le formulaire public intégrable (WordPress, landing pages)
 app.use('/public', (req, res, next) => {
@@ -51,7 +52,8 @@ function auth(req, res, next) {
   try { req.user = jwt.verify(req.cookies.token || '', SECRET); next(); }
   catch { res.status(401).json({ error: 'Non connecté' }); }
 }
-
+app.use('/api/accounts', auth, accounts.admin);
+app.use('/compte', accounts.router);
 app.use('/api', auth, require('./routes/api'));
 app.use('/public', require('./routes/public'));
 app.get('/health', (req, res) => res.json({ ok: true, connectors: conn.status() }));
