@@ -86,7 +86,7 @@ router.post('/agents/:id/pay', wrap((req, res) => {
 }));
 
 // ---------- Livreurs ----------
-crud('couriers',crud('couriers', ['name', 'company', 'phone', 'email', 'fee_per_parcel', 'zones', 'auto_assign']); ['name', 'company', 'phone', 'fee_per_parcel', 'zones', 'auto_assign']);
+crud('couriers', ['name', 'company', 'phone', 'email', 'fee_per_parcel', 'zones', 'auto_assign']);
 router.get('/couriers-full', (req, res) => res.json(db.prepare('SELECT * FROM couriers ORDER BY id DESC').all().map(c => ({ ...c,
   balance: S.courierBalance(c.id), active: db.prepare(`SELECT COUNT(*) n FROM orders WHERE courier_id=? AND status IN
   ('confirme','en_preparation','expedie','en_livraison')`).get(c.id).n,
