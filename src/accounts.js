@@ -22,7 +22,36 @@ function addCol(table, col, def) {
 for (const t of Object.values(TABLE)) { addCol(t, 'password', 'TEXT'); addCol(t, 'invite_hash', 'TEXT'); addCol(t, 'invite_expires', 'TEXT'); }
 addCol('couriers', 'email', 'TEXT');
 
+db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT DEFAULT CURRENT_TIMESTAMP,
+  actor_type TEXT, actor_id INTEGER, actor_name TEXT, action TEXT, order_id INTEGER, detail TEXT);
+  CREATE INDEX IF NOT EXISTS idx_activity_actor ON activity_log(actor_type, actor_id, at);`);
+
 // ---------- Outils ----------
+// Journal : qui a fait quoi, quand (connexions, traitement des commandes…)
+function logAct(type, rec, action, orderId, detail) {
+  try {
+    db.prepare('INSERT INTO activity_log(actor_type,actor_id,actor_name,action,order_id,detail) VALUES(?,?,?,?,?,?)')
+      .run(type, rec?.id ?? null, nameOf(type, rec || {}) || '', action, orderId ?? null, detail ?? null);
+  } catch (e) { console.error('[comptes] journal :', e.message); }
+}
+// Début de la période (UTC, même format que CURRENT_TIMESTAMP). 1 jour = depuis minuit à Kinshasa (UTC+1)
+function sinceOf(days) {
+  const d = Math.min(Math.max(parseInt(days) || 7, 1), 90);
+  let t;
+  if (d === 1) { const n = new Date(Date.now() + 3600e3); n.setUTCHours(0, 0, 0, 0); t = new Date(n.getTime() - 3600e3); }
+  else t = new Date(Date.now() - d * 864e5);
+  return t.toISOString().slice(0, 19).replace('T', ' ');
+}
+// Explique en français pourquoi un email n'est pas parti
+function explainMailError(e) {
+  const m = String(e?.message || e), c = e?.code || '', r = e?.responseCode;
+  if (c === 'EAUTH' || r === 535 || /invalid login|authentication/i.test(m)) return "Le serveur d'email refuse l'identifiant ou le mot de passe. Vérifiez SMTP_USER (adresse complète de la boîte) et SMTP_PASS.";
+  if (['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EDNS', 'ECONNREFUSED', 'ENOTFOUND'].includes(c) || /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|getaddrinfo/i.test(m)) return "Impossible de joindre le serveur d'email. Vérifiez SMTP_HOST (ex. smtp.hostinger.com) et SMTP_PORT (465).";
+  if (/wrong version number|ssl|tls|certificate/i.test(m)) return 'Problème de connexion sécurisée. Essayez SMTP_PORT=465 (SSL) avec le même SMTP_HOST.';
+  if (c === 'EENVELOPE' || [501, 550, 553].includes(r) || /sender|not owned|rejected|mailbox/i.test(m)) return "Adresse refusée. SMTP_FROM doit être l'adresse de la boîte SMTP_USER (ex. Mireb COD <ecom@app.mireb.online>), et l'adresse du destinataire doit être valide.";
+  return null;
+}
 const sha = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 const nameOf = (type, r) => type === 'agent' ? [r.first_name, r.last_name].filter(Boolean).join(' ') : r.name;
 const baseUrl = req => (process.env.BASE_URL || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`).replace(/\/$/, '');
@@ -83,9 +112,97 @@ admin.post('/:type/:id/invite', async (req, res) => {
   if (findAllByEmail(email).some(f => !(f.type === type && String(f.rec.id) === String(id))))
     return res.status(400).json({ error: 'Cet email est déjà utilisé par un autre agent ou livreur' });
   const link = makeLink(type, rec.id, req);
-  let sent = false, reason = '';
-  try { await sendAccessEmail(type, rec, link, req, false); sent = true; } catch (e) { reason = e.message; }
-  res.json({ sent, reason, link, to: rec.email, phone: rec.phone || '', hasPassword: !!rec.password });
+  let sent = false, reason = '', detail = '';
+  try { await sendAccessEmail(type, rec, link, req, false); sent = true; } catch (e) { reason = explainMailError(e) || e.message; detail = e.message; }
+  logAct(type, rec, 'invited', null, sent ? 'Email envoyé' : 'Lien créé, email non envoyé');
+  res.json({ sent, reason, detail, link, to: rec.email, phone: rec.phone || '', hasPassword: !!rec.password });
+});
+
+// Test d'envoi d'email (indique aussi la configuration lue, sans afficher le mot de passe)
+admin.post('/email-test', async (req, res) => {
+  const to = normEmail(req.body?.to);
+  const cfg = { host: process.env.SMTP_HOST || '', port: process.env.SMTP_PORT || '587 (par défaut)', user: process.env.SMTP_USER || '',
+    from: process.env.SMTP_FROM || '(identique à SMTP_USER)', password_set: !!process.env.SMTP_PASS };
+  if (!conn.email.enabled()) return res.json({ ok: false, reason: "SMTP_HOST n'est pas défini : l'envoi d'emails est désactivé.", cfg });
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: 'Adresse email invalide' });
+  try { await conn.email.send(to, 'Test Mireb COD', "Ceci est un message de test : l'envoi d'emails fonctionne."); res.json({ ok: true, cfg }); }
+  catch (e) { res.json({ ok: false, reason: explainMailError(e) || e.message, detail: e.message, cfg }); }
+});
+
+// Supprimer un agent ou un livreur (refusé s'il reste de l'argent à régler ou une livraison en cours)
+admin.delete('/:type/:id', (req, res) => {
+  const { type, id } = req.params;
+  if (!TABLE[type]) return res.status(400).json({ error: 'Type invalide' });
+  const rec = db.prepare(`SELECT * FROM ${TABLE[type]} WHERE id=?`).get(id);
+  if (!rec) return res.status(404).json({ error: 'Fiche introuvable' });
+  const name = nameOf(type, rec);
+  if (type === 'agent') {
+    const due = S.agentDue(rec.id);
+    if (due > 0) return res.status(409).json({ error: `${name} a des commissions non payées (${due}). Payez-les avec 💰 avant de supprimer.` });
+  } else {
+    const busy = db.prepare(`SELECT COUNT(*) n FROM orders WHERE courier_id=? AND status IN ('confirme','en_preparation','expedie','en_livraison')`).get(rec.id).n;
+    if (busy) return res.status(409).json({ error: `${name} a ${busy} commande(s) en cours. Réaffectez-les d'abord.` });
+    const bal = S.courierBalance(rec.id);
+    if (bal !== 0) return res.status(409).json({ error: `${name} a un solde non réglé (${bal}). Enregistrez le versement avec 💳 avant de supprimer.` });
+  }
+  db.transaction(() => {
+    // Les commandes déjà livrées gardent leur historique ; les autres redeviennent libres
+    if (type === 'agent') db.prepare(`UPDATE orders SET agent_id=NULL WHERE agent_id=? AND status IN ('nouveau','en_confirmation')`).run(rec.id);
+    else db.prepare(`UPDATE orders SET courier_id=NULL WHERE courier_id=? AND status NOT IN ('livre','paye')`).run(rec.id);
+    db.prepare(`DELETE FROM ${TABLE[type]} WHERE id=?`).run(rec.id);
+  })();
+  logAct(type, rec, 'deleted', null, "Supprimé par l'administrateur");
+  res.json({ ok: true });
+});
+
+// Suivi des activités : résumé par personne + journal récent
+const TEXT = {
+  agent: { login: () => "s'est connecté(e)", logout: () => "s'est déconnecté(e)", password_set: () => 'a créé son mot de passe',
+    invited: (o, d) => `a reçu son accès (${d || 'invitation'})`, deleted: () => 'compte supprimé',
+    claim: o => `a pris en charge la commande #${o}`, confirme: o => `a confirmé la commande #${o}`, annule: o => `a annulé la commande #${o}`,
+    en_confirmation: o => `doit rappeler le client (commande #${o})`, address: o => `a corrigé l'adresse de la commande #${o}`,
+    courier: (o, d) => `${d || 'livreur'} pour la commande #${o}`, note: (o, d) => `a noté sur la commande #${o}${d ? ' : ' + d : ''}` },
+  courier: { login: () => "s'est connecté(e)", logout: () => "s'est déconnecté(e)", password_set: () => 'a créé son mot de passe',
+    invited: (o, d) => `a reçu son accès (${d || 'invitation'})`, deleted: () => 'compte supprimé',
+    en_livraison: o => `est en route (commande #${o})`, livre: o => `a livré la commande #${o}`, retourne: o => `a retourné la commande #${o}` },
+};
+const isRecent = (ts, ms) => { if (!ts) return false; const t = String(ts); return Date.now() - new Date(t.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(t) ? '' : 'Z')).getTime() < ms; };
+
+admin.get('/activity', (req, res) => {
+  const type = req.query.type === 'courier' ? 'courier' : 'agent', since = sinceOf(req.query.days);
+  const one = (sql, ...p) => db.prepare(sql).get(...p);
+  const cnt = (id, act) => one(`SELECT COUNT(*) n FROM activity_log WHERE actor_type=? AND actor_id=? AND action=? AND at>=?`, type, id, act, since).n;
+  const last = (id, cond) => one(`SELECT MAX(at) t FROM activity_log WHERE actor_type=? AND actor_id=? AND ${cond}`, type, id).t;
+  let people;
+  if (type === 'agent') {
+    people = db.prepare('SELECT * FROM agents ORDER BY first_name').all().map(a => ({
+      id: a.id, name: nameOf('agent', a), disabled: a.active === 0, has_account: !!a.password,
+      last_login: last(a.id, "action='login'"), last_action: last(a.id, "action NOT IN ('login','logout','password_set','invited')"),
+      stats: { logins: cnt(a.id, 'login'), claimed: cnt(a.id, 'claim'), confirmed: cnt(a.id, 'confirme'), cancelled: cnt(a.id, 'annule'), recall: cnt(a.id, 'en_confirmation'),
+        delivered: one(`SELECT COUNT(DISTINCT h.order_id) n FROM order_history h JOIN orders o ON o.id=h.order_id WHERE o.agent_id=? AND h.status='livre' AND h.created_at>=?`, a.id, since).n,
+        pending: one(`SELECT COUNT(*) n FROM orders WHERE agent_id=? AND status IN ('nouveau','en_confirmation')`, a.id).n } }));
+  } else {
+    people = db.prepare('SELECT * FROM couriers ORDER BY name').all().map(c => {
+      const h = st => one(`SELECT COUNT(DISTINCT h.order_id) n FROM order_history h JOIN orders o ON o.id=h.order_id
+        WHERE o.courier_id=? AND h.note LIKE 'Par livreur %' AND h.status=? AND h.created_at>=?`, c.id, st, since).n;
+      return { id: c.id, name: c.name, has_account: !!c.password, online: isRecent(c.last_seen, 5 * 60e3), last_seen: c.last_seen,
+        last_login: last(c.id, "action='login'"), last_action: c.last_seen,
+        stats: { logins: cnt(c.id, 'login'), en_route: h('en_livraison'), delivered: h('livre'), returned: h('retourne'),
+          collected: one(`SELECT COALESCE(SUM(o.amount),0) s FROM orders o WHERE o.courier_id=? AND o.status IN ('livre','paye')
+            AND o.id IN (SELECT order_id FROM order_history WHERE status='livre' AND created_at>=?)`, c.id, since).s,
+          current: one(`SELECT COUNT(*) n FROM orders WHERE courier_id=? AND status IN ('confirme','en_preparation','expedie','en_livraison')`, c.id).n } };
+    });
+  }
+  const ev = db.prepare(`SELECT at, actor_id, actor_name, action, order_id, detail FROM activity_log WHERE actor_type=? AND at>=? ORDER BY id DESC LIMIT 300`).all(type, since)
+    .map(e => ({ at: e.at, actor_id: e.actor_id, name: e.actor_name, order_id: e.order_id, text: (TEXT[type][e.action] || (() => e.action))(e.order_id, e.detail) }));
+  if (type === 'courier') {
+    db.prepare(`SELECT h.created_at at, h.status, h.note, h.order_id, o.courier_id FROM order_history h JOIN orders o ON o.id=h.order_id
+      WHERE h.note LIKE 'Par livreur %' AND h.created_at>=? ORDER BY h.id DESC LIMIT 300`).all(since).forEach(h => {
+      if (TEXT.courier[h.status]) ev.push({ at: h.at, actor_id: h.courier_id, name: h.note.slice('Par livreur '.length), order_id: h.order_id, text: TEXT.courier[h.status](h.order_id) });
+    });
+  }
+  ev.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));   // le plus récent d'abord (tri stable pour les égalités)
+  res.json({ since, people, events: ev.slice(0, 200) });
 });
 
 // ====================================================================
@@ -103,6 +220,7 @@ router.post('/api/set-password', limiter, (req, res) => {
     const rec = db.prepare(`SELECT * FROM ${TABLE[type]} WHERE invite_hash=?`).get(h);
     if (rec && rec.invite_expires && new Date(rec.invite_expires) > new Date()) {
       db.prepare(`UPDATE ${TABLE[type]} SET password=?, invite_hash=NULL, invite_expires=NULL WHERE id=?`).run(bcrypt.hashSync(String(password), 10), rec.id);
+      logAct(type, rec, 'password_set');
       return res.json({ ok: true, email: rec.email });
     }
   }
@@ -131,14 +249,31 @@ router.post('/api/login', limiter, (req, res) => {
     // Les livreurs utilisent l'app existante (suivi GPS) : on les y envoie avec leur jeton personnel.
     let t = rec.app_token;
     if (!t) { t = crypto.randomBytes(16).toString('hex'); db.prepare('UPDATE couriers SET app_token=? WHERE id=?').run(t, rec.id); }
+    logAct('courier', rec, 'login');
     return res.json({ ok: true, role: 'courier', redirect: `/livreur/?t=${t}` });
   }
+  logAct('agent', rec, 'login');
   res.cookie('acct', jwt.sign({ k: 'agent', id: rec.id }, SECRET, { expiresIn: '7d' }),
     { httpOnly: true, sameSite: 'lax', secure: (req.get('x-forwarded-proto') || req.protocol) === 'https' });
   res.json({ ok: true, role: 'agent' });
 });
 
-router.post('/api/logout', (req, res) => { res.clearCookie('acct'); res.json({ ok: true }); });
+router.post('/api/logout', (req, res) => {
+  try { const p = jwt.verify(req.cookies?.acct || '', SECRET); const a = db.prepare('SELECT * FROM agents WHERE id=?').get(p.id); if (a) logAct('agent', a, 'logout'); } catch {}
+  res.clearCookie('acct'); res.json({ ok: true });
+});
+
+// Déconnexion du livreur : son lien personnel est renouvelé (l'app installée ne peut plus se rouvrir toute seule).
+// Un livreur sans compte (lien envoyé par l'admin, sans mot de passe) garde son lien : il le quitte seulement de cet appareil.
+router.post('/api/courier-logout', limiter, (req, res) => {
+  const t = String(req.get('x-token') || req.body?.t || '');
+  const rec = /^[a-f0-9]{32}$/.test(t) ? db.prepare('SELECT * FROM couriers WHERE app_token=?').get(t) : null;
+  if (!rec) return res.json({ ok: true, account: false });
+  logAct('courier', rec, 'logout');
+  if (!rec.password) return res.json({ ok: true, account: false });
+  db.prepare('UPDATE couriers SET app_token=? WHERE id=?').run(crypto.randomBytes(16).toString('hex'), rec.id);
+  res.json({ ok: true, account: true });
+});
 
 const agentAuth = (req, res, next) => {
   try {
@@ -180,6 +315,7 @@ router.post('/api/agent/orders/:id/claim', agentAuth, (req, res) => {
   const r = db.prepare(`UPDATE orders SET agent_id=? WHERE id=? AND agent_id IS NULL AND status IN ('nouveau','en_confirmation')`).run(req.agent.id, req.params.id);
   if (!r.changes) return res.status(409).json({ error: 'Cette commande est déjà prise par un autre agent' });
   history(+req.params.id, db.prepare('SELECT status FROM orders WHERE id=?').get(req.params.id).status, `Prise en charge par ${nameOf('agent', req.agent)}`);
+  logAct('agent', req.agent, 'claim', +req.params.id);
   res.json({ ok: true });
 });
 
@@ -220,6 +356,10 @@ router.put('/api/agent/orders/:id', agentAuth, (req, res) => {
     })();
   } catch (e) { return res.status(409).json({ error: e.message }); }
 
+  if (address !== undefined && address !== o.address) logAct('agent', me, 'address', id, address);
+  if (courier !== undefined && (courier ? courier.id : null) !== o.courier_id) logAct('agent', me, 'courier', id, courier ? `a choisi le livreur ${courier.name}` : 'a retiré le livreur');
+  if (b.status) logAct('agent', me, b.status, id, note || null);
+  else if (note) logAct('agent', me, 'note', id, note);
   if (b.status) S.setStatus(id, b.status, `Par agent ${who}${note ? ' : ' + note : ''}`);   // déclenche l'auto-assignation, le stock, les automatisations
   else if (note) history(id, o.status, `Note de ${who} : ${note}`);
 
