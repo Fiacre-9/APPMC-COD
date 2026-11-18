@@ -31,7 +31,7 @@ async function logout() { await api('/auth/logout', 'POST'); showLogin(); }
 // ---------- Navigation ----------
 const PAGES = {
   dashboard: ['📊 Tableau de bord', dashboard], orders: ['📦 Commandes COD', orders], crm: ['👥 CRM Clients', crm],
-  vendors: ['🏪 Vendeurs', vendors], agents: ['☎️ Agents', agents], couriers: ['🚚 Livreurs', couriers], stock: ['🏷️ Stock', stock], channels: ['📣 Canaux de vente', channels],
+  vendors: ['🏪 Vendeurs', vendors], agents: ['☎️ Agents', agents], couriers: ['🚚 Livreurs', couriers], activity: ['🕵️ Activité', activity], stock: ['🏷️ Stock', stock], channels: ['📣 Canaux de vente', channels],
   digital: ['📥 Ventes numériques', digitalSales], marketing: ['📣 Marketing', marketing], stats: ['📈 Statistiques', stats], kanban: ['🗂️ Pipeline Kanban', kanban], automations: ['⚡ Automatisations', automations],
   tracking: ['📍 Tracking GPS', tracking], sync: ['🔄 Synchronisation', sync], settings: ['⚙️ Paramètres', settings],
 };
@@ -145,7 +145,7 @@ async function agents(v) {
   <div class="card tw"><table><tr><th>Agent</th><th>Contact</th><th>Taux</th><th>Commandes</th><th>Dû</th><th></th></tr>
   ${rows.map(a => `<tr><td><b>${esc(a.first_name)} ${esc(a.last_name)}</b></td><td>${esc(a.phone)}<br>${esc(a.email)}</td><td>${a.commission_rate}%</td>
     <td>${a.orders} (${a.delivered} livrées)</td><td><b>${money(a.due)}</b></td>
-    <td><button class="sm" onclick="payAgent(${a.id})">💰 Payer</button> <button class="sm" onclick="inviteAccount('agent',${a.id})">✉️ Accès</button> <button class="sm gray" onclick='agentForm(${JSON.stringify(a).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
+    <td><button class="sm" onclick="payAgent(${a.id})">💰 Payer</button> <button class="sm" onclick="inviteAccount('agent',${a.id})">✉️ Accès</button> <button class="sm gray" title="Supprimer" style="color:#dc2626" data-n="${esc(a.first_name + ' ' + a.last_name)}" onclick="deleteAccount('agent',${a.id},this.dataset.n)">🗑️</button> <button class="sm gray" onclick='agentForm(${JSON.stringify(a).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
 }
 function agentForm(a = {}) {
   modal(`<h3>${a.id ? 'Modifier' : 'Ajouter'} un agent</h3><form class="f" onsubmit="event.preventDefault();api('/api/agents${a.id ? '/' + a.id : ''}','${a.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
@@ -168,7 +168,7 @@ async function couriers(v) {
   <div class="card tw"><table><tr><th>Livreur</th><th>Tarif/colis</th><th>Zones</th><th>En cours</th><th>Solde dû</th><th></th></tr>
   ${rows.map(c => `<tr><td><b>${esc(c.name)}</b><br>${esc(c.company)} · ${esc(c.phone)}</td><td>${money(c.fee_per_parcel)}</td><td>${esc(c.zones)}</td>
     <td>${c.active}</td><td><b>${money(c.balance)}</b></td>
-    <td><button class="sm" onclick="courierPay(${c.id})">💳 Paiement</button> <button class="sm" onclick="inviteAccount('courier',${c.id})">✉️ Accès</button> <button class="sm gray" onclick='courierForm(${JSON.stringify(c).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
+    <td><button class="sm" onclick="courierPay(${c.id})">💳 Paiement</button> <button class="sm" onclick="inviteAccount('courier',${c.id})">✉️ Accès</button> <button class="sm gray" title="Supprimer" style="color:#dc2626" data-n="${esc(c.name)}" onclick="deleteAccount('courier',${c.id},this.dataset.n)">🗑️</button> <button class="sm gray" onclick='courierForm(${JSON.stringify(c).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
 }
 function courierForm(c = {}) {
   modal(`<h3>${c.id ? 'Modifier' : 'Ajouter'} un livreur</h3><form class="f" onsubmit="event.preventDefault();api('/api/couriers${c.id ? '/' + c.id : ''}','${c.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
@@ -430,14 +430,59 @@ async function settings(v) {
 
 boot();
 
-// ---------- Accès agents / livreurs (email d'invitation) ----------
+// ---------- Accès agents / livreurs, suppression, suivi des activités ----------
+async function accApi(url, method = 'GET', body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { showLogin(); throw new Error('Non connecté'); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Erreur');
+  return d;
+}
 async function inviteAccount(type, id) {
-  const r = await api(`/api/accounts/${type}/${id}/invite`, 'POST');
+  let r; try { r = await accApi(`/api/accounts/${type}/${id}/invite`, 'POST'); } catch (e) { return alert(e.message); }
   const wa = `https://wa.me/${String(r.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent('Créez votre mot de passe Mireb COD : ' + r.link)}`;
   modal(`<h3>${type === 'agent' ? 'Accès agent' : 'Accès livreur'}</h3>
   <p>${r.sent ? '✅ Email envoyé à <b>' + esc(r.to) + '</b>' : '⚠️ Email non envoyé : ' + esc(r.reason)}</p>
+  ${!r.sent && r.detail ? `<p class="mut" style="font-size:12px">Détail technique : ${esc(r.detail)}</p>` : ''}
   <p class="mut">Identifiant de connexion : <b>${esc(r.to)}</b>. Lien valable 48 h, à envoyer si besoin :</p>
   <p><code style="word-break:break-all">${esc(r.link)}</code></p>
   <div class="row"><button onclick="navigator.clipboard.writeText('${esc(r.link)}');toast('Copié')">📋 Copier</button>
-  <a class="btn" target="_blank" href="${wa}">📲 Envoyer par WhatsApp</a></div>`);
+  <a class="btn" target="_blank" href="${wa}">📲 Envoyer par WhatsApp</a></div>
+  ${!r.sent ? '<p><button class="sm gray" onclick="testEmail()">✉️ Tester l’envoi d’emails</button></p>' : ''}`);
+}
+async function deleteAccount(type, id, name) {
+  if (!confirm(`Supprimer ${type === 'agent' ? 'l’agent' : 'le livreur'} « ${name} » ?\n\nSon accès est fermé immédiatement. Les commandes déjà livrées gardent leur historique.`)) return;
+  try { await accApi(`/api/accounts/${type}/${id}`, 'DELETE'); toast('Supprimé'); route(); } catch (e) { alert(e.message); }
+}
+async function testEmail() {
+  const to = prompt('Envoyer un email de test à quelle adresse ?'); if (!to) return;
+  let r; try { r = await accApi('/api/accounts/email-test', 'POST', { to }); } catch (e) { return alert(e.message); }
+  const c = r.cfg || {};
+  modal(`<h3>Test d’envoi d’emails</h3>
+  <p>${r.ok ? '✅ Email de test envoyé à <b>' + esc(to) + '</b>. Vérifiez la boîte de réception et les indésirables.' : '❌ ' + esc(r.reason)}</p>
+  ${r.detail ? `<p class="mut" style="font-size:12px">Détail technique : ${esc(r.detail)}</p>` : ''}
+  <p class="mut" style="font-size:13px">Configuration lue : serveur <b>${esc(c.host || '—')}</b> · port <b>${esc(c.port)}</b> · utilisateur <b>${esc(c.user || '—')}</b> · expéditeur <b>${esc(c.from)}</b> · mot de passe ${c.password_set ? 'défini' : '<b>manquant</b>'}</p>`);
+}
+
+// Suivi des activités des agents et des livreurs
+let ACT = { type: 'agent', days: 7 };
+const fdate = t => { if (!t) return '—'; const x = String(t), d = new Date(x.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(x) ? '' : 'Z'));
+  return d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Kinshasa' }); };
+async function activity(v) {
+  const d = await accApi(`/api/accounts/activity?type=${ACT.type}&days=${ACT.days}`);
+  const seg = (k, val, label) => `<button class="sm ${ACT[k] === val ? '' : 'gray'}" onclick="ACT.${k}=${JSON.stringify(val)};route()">${label}</button>`;
+  const agent = ACT.type === 'agent';
+  const head = agent ? ['Agent', 'Dernière connexion', 'Dernière action', 'Connexions', 'Prises en charge', 'Confirmées', 'À rappeler', 'Annulées', 'Livrées', 'En attente']
+    : ['Livreur', 'Statut', 'Dernière connexion', 'Connexions', 'En route', 'Livrées', 'Retours', 'Encaissé', 'En cours'];
+  const row = p => {
+    const s = p.stats, nom = `<b>${esc(p.name)}</b>${p.disabled ? ' <span class="mut">(désactivé)</span>' : ''}${p.has_account ? '' : '<br><span class="mut">pas de compte</span>'}`;
+    return agent ? `<tr><td>${nom}</td><td>${fdate(p.last_login)}</td><td>${fdate(p.last_action)}</td><td>${s.logins}</td><td>${s.claimed}</td><td>${s.confirmed}</td><td>${s.recall}</td><td>${s.cancelled}</td><td><b>${s.delivered}</b></td><td>${s.pending}</td></tr>`
+      : `<tr><td>${nom}</td><td>${p.online ? '🟢 En ligne' : '⚪ Hors ligne'}<br><span class="mut">position : ${fdate(p.last_seen)}</span></td><td>${fdate(p.last_login)}</td><td>${s.logins}</td><td>${s.en_route}</td><td><b>${s.delivered}</b></td><td>${s.returned}</td><td>${money(s.collected)}</td><td>${s.current}</td></tr>`;
+  };
+  v.innerHTML = `<div class="card"><div class="row" style="gap:6px;flex-wrap:wrap">${seg('type', 'agent', '☎️ Agents')}${seg('type', 'courier', '🚚 Livreurs')}
+    <span style="width:12px"></span>${seg('days', 1, 'Aujourd’hui')}${seg('days', 7, '7 jours')}${seg('days', 30, '30 jours')}
+    <button class="sm gray" onclick="testEmail()">✉️ Tester l’envoi d’emails</button></div></div>
+  <div class="card tw"><table><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr>${d.people.map(row).join('') || `<tr><td colspan="${head.length}" class="mut">Aucun ${agent ? 'agent' : 'livreur'}.</td></tr>`}</table></div>
+  <div class="card tw"><h3 style="margin-top:0">Journal d’activité</h3><table>${d.events.map(e => `<tr><td class="mut" style="white-space:nowrap">${fdate(e.at)}</td><td><b>${esc(e.name)}</b></td><td>${esc(e.text)}</td></tr>`).join('')
+    || '<tr><td class="mut">Aucune activité sur cette période.</td></tr>'}</table></div>`;
 }

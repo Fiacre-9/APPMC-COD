@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#1e40d8">
+<link rel="manifest" href="/manifests/compte.json">
+<link rel="icon" href="/icons/compte-192.png">
+<link rel="apple-touch-icon" href="/icons/compte-apple.png">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mon compte">
 <title>Mireb COD : mon compte</title>
 <style>
   :root{
@@ -91,6 +96,7 @@
       <button class="principal" type="submit">Se connecter</button>
     </form>
     <button class="lien" id="go-oubli" type="button">Mot de passe oublié ?</button>
+    <button class="lien" type="button" data-pwa-install hidden>📲 Installer l’application sur ce téléphone</button>
   </section>
 
   <!-- Mot de passe oublié -->
@@ -117,6 +123,7 @@
       <button type="button" class="maj" id="a-maj">↻ Actualiser</button>
     </div>
     <div id="a-liste"></div>
+    <button class="lien" type="button" data-pwa-install hidden>📲 Installer l’application sur ce téléphone</button>
   </section>
 
 </main>
@@ -243,8 +250,13 @@ $('#a-liste').addEventListener('submit', async e => {
   } catch (err) { msg.textContent = err.message; msg.className = 'msg err'; form.querySelectorAll('button').forEach(b => b.disabled = false); }
 });
 
-// Démarrage : lien d’invitation, sinon session agent déjà ouverte, sinon connexion
-if (TOKEN) montrer('creer'); else chargerAgent().catch(() => montrer('login'));
+// Démarrage : lien d’invitation, sinon livreur déjà connecté sur cet appareil, sinon session agent, sinon connexion
+let memo = null; try { memo = localStorage.getItem('mireb_t'); } catch (e) {}
+if (TOKEN) montrer('creer');
+else if (new URLSearchParams(location.search).get('out')) { montrer('login'); message('#m-login', 'Vous êtes déconnecté(e).', true); }
+else if (memo && /^[a-f0-9]{32}$/.test(memo)) location.replace('/livreur/');
+else chargerAgent().catch(() => montrer('login'));
 </script>
+<script src="/pwa.js" data-app="Mon compte" data-color="#E8342A" data-icon="/icons/compte-192.png"></script>
 </body>
 </html>
