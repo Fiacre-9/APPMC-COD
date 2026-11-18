@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1e40d8">
+<title>Mireb COD : mon compte</title>
+<style>
+  :root{
+    --bleu:#1e40d8; --bleu-fonce:#16309f; --rouge:#e8342a; --encre:#1d2330; --gris:#6b7280;
+    --fond:#f4f6fb; --carte:#ffffff; --trait:#dfe3ee; --ok:#15803d;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --encre:#e8ecf5; --gris:#9aa3b5; --fond:#0f1420; --carte:#181f2e; --trait:#2a3347; --bleu:#5b7cff; --bleu-fonce:#4764e6; --ok:#4ade80; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fond);color:var(--encre);line-height:1.5;min-height:100vh}
+  header{background:var(--bleu);color:#fff;padding:18px 20px 16px}
+  header b{font-size:22px;letter-spacing:.2px}
+  header span{display:block;font-size:13px;opacity:.85;margin-top:2px}
+  main{max-width:460px;margin:0 auto;padding:20px 16px 40px}
+  h1{font-size:20px;margin:6px 0 4px}
+  p.sous{margin:0 0 16px;color:var(--gris);font-size:15px}
+  form{background:var(--carte);border:1px solid var(--trait);border-radius:12px;padding:18px;display:grid;gap:12px}
+  label{display:grid;gap:5px;font-size:14px;font-weight:600}
+  input{font:inherit;font-size:16px;padding:12px;border:1px solid var(--trait);border-radius:8px;background:var(--fond);color:var(--encre);width:100%}
+  input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--bleu);outline-offset:2px}
+  button.principal{font:inherit;font-weight:700;font-size:16px;background:var(--rouge);color:#fff;border:0;border-radius:8px;padding:13px;cursor:pointer}
+  button.principal:disabled{opacity:.6}
+  button.lien{font:inherit;background:none;border:0;color:var(--bleu);padding:10px 0 0;cursor:pointer;text-align:left;font-size:15px}
+  .msg{min-height:20px;font-size:14px;font-weight:600}
+  .msg.err{color:var(--rouge)} .msg.ok{color:var(--ok)}
+  .cache{display:none}
+  .haut{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .haut button{font:inherit;font-size:14px;background:none;border:1px solid var(--trait);color:var(--encre);border-radius:8px;padding:7px 12px;cursor:pointer}
+  .du{background:var(--carte);border:1px solid var(--trait);border-left:5px solid var(--rouge);border-radius:12px;padding:14px 16px;margin:14px 0}
+  .du div{font-size:14px;color:var(--gris)} .du b{font-size:24px}
+  .cmd{background:var(--carte);border:1px solid var(--trait);border-radius:12px;padding:14px;margin-bottom:10px}
+  .cmd h3{margin:0 0 4px;font-size:16px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .statut{font-size:12px;font-weight:600;background:var(--fond);border:1px solid var(--trait);border-radius:99px;padding:2px 10px}
+  .cmd p{margin:2px 0;font-size:14px}
+  .cmd a{color:var(--bleu);font-weight:600}
+  @media (prefers-reduced-motion:no-preference){ .cmd{transition:border-color .15s} }
+
+  .onglets{display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap}
+  .onglets button{font:inherit;font-size:14px;font-weight:600;background:var(--carte);color:var(--encre);border:1px solid var(--trait);border-radius:99px;padding:7px 13px;cursor:pointer}
+  .onglets button[aria-selected="true"]{background:var(--bleu);border-color:var(--bleu);color:#fff}
+  .onglets .maj{margin-left:auto;background:none}
+  details{margin-top:10px;border-top:1px solid var(--trait);padding-top:8px}
+  summary{cursor:pointer;font-weight:700;color:var(--bleu);padding:6px 0}
+  .cmd form{border:0;padding:6px 0 0;background:none;gap:10px}
+  select{font:inherit;font-size:16px;padding:12px;border:1px solid var(--trait);border-radius:8px;background:var(--fond);color:var(--encre);width:100%}
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .actions button{font:inherit;font-weight:700;font-size:15px;border-radius:8px;padding:12px;cursor:pointer;border:1px solid var(--trait);background:var(--carte);color:var(--encre)}
+  .actions .principal{background:var(--rouge);border-color:var(--rouge);color:#fff;grid-column:1/-1}
+  .actions .danger{color:var(--rouge);border-color:var(--rouge)}
+  .actions button:disabled{opacity:.6}
+  .cmd .principal{font:inherit;font-weight:700;background:var(--rouge);color:#fff;border:0;border-radius:8px;padding:12px;width:100%;cursor:pointer;margin-top:8px}
+  .vide{color:var(--gris);text-align:center;padding:24px 8px}
+</style>
+</head>
+<body>
+<header><b>MIREB COD</b><span>Espace agents et livreurs</span></header>
+<main>
+
+  <!-- Choisir son mot de passe (lien reçu par email ou WhatsApp) -->
+  <section id="v-creer" class="cache">
+    <h1>Choisissez votre mot de passe</h1>
+    <p class="sous">Vous l’utiliserez avec votre email pour vous connecter.</p>
+    <form id="f-creer">
+      <label>Nouveau mot de passe (8 caractères minimum)
+        <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+      <label>Confirmez le mot de passe
+        <input type="password" name="confirm" autocomplete="new-password" minlength="8" required></label>
+      <div class="msg" id="m-creer" role="status"></div>
+      <button class="principal" type="submit">Enregistrer mon mot de passe</button>
+    </form>
+  </section>
+
+  <!-- Connexion -->
+  <section id="v-login">
+    <h1>Connexion</h1>
+    <p class="sous">Entrez l’email de votre compte et votre mot de passe.</p>
+    <form id="f-login">
+      <label>Email
+        <input type="email" name="email" autocomplete="username" inputmode="email" required></label>
+      <label>Mot de passe
+        <input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="msg" id="m-login" role="status"></div>
+      <button class="principal" type="submit">Se connecter</button>
+    </form>
+    <button class="lien" id="go-oubli" type="button">Mot de passe oublié ?</button>
+  </section>
+
+  <!-- Mot de passe oublié -->
+  <section id="v-oubli" class="cache">
+    <h1>Mot de passe oublié</h1>
+    <p class="sous">Entrez votre email. Si un compte existe, vous recevrez un lien pour choisir un nouveau mot de passe.</p>
+    <form id="f-oubli">
+      <label>Email
+        <input type="email" name="email" autocomplete="username" inputmode="email" required></label>
+      <div class="msg" id="m-oubli" role="status"></div>
+      <button class="principal" type="submit">Envoyer le lien</button>
+    </form>
+    <button class="lien" id="go-login" type="button">Retour à la connexion</button>
+  </section>
+
+  <!-- Espace agent de confirmation -->
+  <section id="v-agent" class="cache">
+    <div class="haut"><h1 id="a-nom">Mes commandes</h1><button id="a-out" type="button">Déconnexion</button></div>
+    <div class="du"><div>Commission à recevoir</div><b id="a-du">0</b></div>
+    <div class="onglets" id="a-onglets" role="tablist">
+      <button type="button" role="tab" data-tab="traiter">À traiter <span id="n-traiter"></span></button>
+      <button type="button" role="tab" data-tab="livraison">En livraison <span id="n-livraison"></span></button>
+      <button type="button" role="tab" data-tab="fin">Terminées <span id="n-fin"></span></button>
+      <button type="button" class="maj" id="a-maj">↻ Actualiser</button>
+    </div>
+    <div id="a-liste"></div>
+  </section>
+
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const LABEL = { nouveau: 'Nouveau', en_confirmation: 'En confirmation', confirme: 'Confirmé', en_preparation: 'En préparation',
+  expedie: 'Expédié', en_livraison: 'En livraison', livre: 'Livré', paye: 'Payé', annule: 'Annulé', retourne: 'Retourné' };
+const vues = ['creer', 'login', 'oubli', 'agent'];
+const montrer = v => vues.forEach(n => $('#v-' + n).classList.toggle('cache', n !== v));
+
+async function appel(url, body, method) {
+  const r = await fetch('/compte/api/' + url, { method: method || (body ? 'POST' : 'GET'), headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(d.error || 'Une erreur est survenue. Réessayez.'), { status: r.status });
+  return d;
+}
+function message(id, texte, ok) { const m = $(id); m.textContent = texte || ''; m.className = 'msg ' + (ok ? 'ok' : 'err'); }
+async function envoyer(form, msgId, action) {
+  const bouton = form.querySelector('button.principal'); bouton.disabled = true; message(msgId, '');
+  try { await action(Object.fromEntries(new FormData(form))); } catch (e) { message(msgId, e.message); }
+  bouton.disabled = false;
+}
+
+const TOKEN = new URLSearchParams(location.search).get('t');
+
+$('#f-creer').addEventListener('submit', e => { e.preventDefault(); envoyer(e.target, '#m-creer', async d => {
+  if (d.password !== d.confirm) throw new Error('Les deux mots de passe ne sont pas identiques');
+  const r = await appel('set-password', { token: TOKEN, password: d.password });
+  history.replaceState(null, '', location.pathname);
+  $('#f-login').email.value = r.email || '';
+  montrer('login'); message('#m-login', 'Mot de passe enregistré. Connectez-vous maintenant.', true);
+}); });
+
+$('#f-login').addEventListener('submit', e => { e.preventDefault(); envoyer(e.target, '#m-login', async d => {
+  const r = await appel('login', d);
+  if (r.role === 'courier') return location.href = r.redirect;
+  chargerAgent();
+}); });
+
+$('#f-oubli').addEventListener('submit', e => { e.preventDefault(); envoyer(e.target, '#m-oubli', async d => {
+  await appel('forgot', d);
+  message('#m-oubli', 'Demande envoyée. Si ce compte existe, un email arrive dans quelques minutes (pensez aux courriers indésirables).', true);
+}); });
+
+$('#go-oubli').onclick = () => montrer('oubli');
+$('#go-login').onclick = () => montrer('login');
+$('#a-out').onclick = async () => { await appel('logout', {}); montrer('login'); };
+
+// ---------- Espace agent ----------
+let DATA = null, TAB = 'traiter';
+const GROUPES = {
+  traiter: o => ['nouveau', 'en_confirmation'].includes(o.status) || (o.status === 'confirme' && !o.courier_id),
+  livraison: o => ['confirme', 'en_preparation', 'expedie', 'en_livraison'].includes(o.status) && !GROUPES.traiter(o),
+  fin: o => ['livre', 'paye', 'annule', 'retourne'].includes(o.status)
+};
+const argent = n => (+n || 0).toLocaleString('fr-FR') + ' ' + (DATA?.currency || '');
+
+function carte(o) {
+  const livreurs = DATA.couriers.map(c => `<option value="${c.id}" ${c.id === o.courier_id ? 'selected' : ''}>${esc(c.name)}${c.zones ? ' (' + esc(c.zones) + ')' : ''} : ${c.load} en cours</option>`).join('');
+  let bas = '';
+  if (!o.mine && o.agent_id == null) {
+    bas = `<button class="principal" type="button" data-claim="${o.id}">Prendre en charge</button>`;
+  } else if (o.assignable) {
+    bas = `<details><summary>Traiter cette commande</summary>
+      <form data-order="${o.id}">
+        <label>Adresse confirmée avec le client<input name="address" value="${esc(o.address)}" required minlength="3"></label>
+        <label>Livreur<select name="courier_id"><option value="">Aucun pour l’instant</option>${livreurs}</select></label>
+        <label>Note (facultatif)<input name="note" placeholder="Ex. : le client est joignable après 17h"></label>
+        <div class="actions">
+          ${o.editable ? `<button class="principal" value="confirme">Confirmer la commande</button>
+          <button value="en_confirmation">À rappeler</button><button class="danger" value="annule">Annuler</button>` : ''}
+          <button value="">Enregistrer</button>
+        </div>
+        <div class="msg" role="status"></div>
+      </form></details>`;
+  }
+  return `<div class="cmd"><h3><span>#${o.id} ${esc(o.name)}</span><span class="statut">${esc(LABEL[o.status] || o.status)}</span></h3>
+    <p>${esc(o.product_name)} × ${o.qty} · ${argent(o.amount)}</p>
+    <p>${esc(o.address)}${o.city ? ', ' + esc(o.city) : ''}</p>
+    ${o.blacklisted ? '<p style="color:var(--rouge);font-weight:700">⚠️ Client signalé à risque</p>' : ''}
+    <p><a href="tel:${esc(o.phone)}">📞 Appeler ${esc(o.phone)}</a>${o.courier ? ' · 🚚 ' + esc(o.courier) : ''}</p>${bas}</div>`;
+}
+
+function dessiner() {
+  for (const g of Object.keys(GROUPES)) $('#n-' + g).textContent = '(' + DATA.orders.filter(GROUPES[g]).length + ')';
+  document.querySelectorAll('#a-onglets [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === TAB));
+  const liste = DATA.orders.filter(GROUPES[TAB]);
+  $('#a-liste').innerHTML = liste.map(carte).join('') || '<p class="vide">Aucune commande ici pour le moment.</p>';
+}
+
+async function chargerAgent() {
+  DATA = await appel('agent/me');
+  $('#a-nom').textContent = DATA.name || 'Mes commandes';
+  $('#a-du').textContent = argent(DATA.commission_due);
+  dessiner(); montrer('agent');
+}
+
+document.querySelectorAll('#a-onglets [data-tab]').forEach(b => b.onclick = () => { TAB = b.dataset.tab; dessiner(); });
+$('#a-maj').onclick = () => chargerAgent().catch(e => alert(e.message));
+
+$('#a-liste').addEventListener('click', async e => {
+  const id = e.target.dataset?.claim; if (!id) return;
+  e.target.disabled = true;
+  try { await appel('agent/orders/' + id + '/claim', {}); await chargerAgent(); }
+  catch (err) { alert(err.message); await chargerAgent().catch(() => {}); }
+});
+
+$('#a-liste').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target, status = e.submitter?.value || '', id = form.dataset.order, msg = form.querySelector('.msg');
+  const d = Object.fromEntries(new FormData(form));
+  if (status === 'annule' && !confirm('Annuler cette commande ?')) return;
+  if (status === 'confirme' && !d.courier_id && !confirm('Aucun livreur choisi. Confirmer quand même ?')) return;
+  const body = { address: d.address, courier_id: d.courier_id === '' ? null : +d.courier_id, note: d.note };
+  if (status) body.status = status;
+  form.querySelectorAll('button').forEach(b => b.disabled = true); msg.textContent = '';
+  try {
+    const r = await appel('agent/orders/' + id, body, 'PUT');
+    await chargerAgent();
+    if (status === 'confirme') TAB = r.courier ? 'livraison' : 'traiter';
+    dessiner();
+  } catch (err) { msg.textContent = err.message; msg.className = 'msg err'; form.querySelectorAll('button').forEach(b => b.disabled = false); }
+});
+
+// Démarrage : lien d’invitation, sinon session agent déjà ouverte, sinon connexion
+if (TOKEN) montrer('creer'); else chargerAgent().catch(() => montrer('login'));
+</script>
+</body>
+</html>

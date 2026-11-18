@@ -145,7 +145,7 @@ async function agents(v) {
   <div class="card tw"><table><tr><th>Agent</th><th>Contact</th><th>Taux</th><th>Commandes</th><th>Dû</th><th></th></tr>
   ${rows.map(a => `<tr><td><b>${esc(a.first_name)} ${esc(a.last_name)}</b></td><td>${esc(a.phone)}<br>${esc(a.email)}</td><td>${a.commission_rate}%</td>
     <td>${a.orders} (${a.delivered} livrées)</td><td><b>${money(a.due)}</b></td>
-    <td><button class="sm" onclick="payAgent(${a.id})">💰 Payer</button> <button class="sm gray" onclick='agentForm(${JSON.stringify(a).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
+    <td><button class="sm" onclick="payAgent(${a.id})">💰 Payer</button> <button class="sm" onclick="inviteAccount('agent',${a.id})">✉️ Accès</button> <button class="sm gray" onclick='agentForm(${JSON.stringify(a).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
 }
 function agentForm(a = {}) {
   modal(`<h3>${a.id ? 'Modifier' : 'Ajouter'} un agent</h3><form class="f" onsubmit="event.preventDefault();api('/api/agents${a.id ? '/' + a.id : ''}','${a.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
@@ -168,12 +168,12 @@ async function couriers(v) {
   <div class="card tw"><table><tr><th>Livreur</th><th>Tarif/colis</th><th>Zones</th><th>En cours</th><th>Solde dû</th><th></th></tr>
   ${rows.map(c => `<tr><td><b>${esc(c.name)}</b><br>${esc(c.company)} · ${esc(c.phone)}</td><td>${money(c.fee_per_parcel)}</td><td>${esc(c.zones)}</td>
     <td>${c.active}</td><td><b>${money(c.balance)}</b></td>
-    <td><button class="sm" onclick="courierPay(${c.id})">💳 Paiement</button> <button class="sm gray" onclick='courierForm(${JSON.stringify(c).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
+    <td><button class="sm" onclick="courierPay(${c.id})">💳 Paiement</button> <button class="sm" onclick="inviteAccount('courier',${c.id})">✉️ Accès</button> <button class="sm gray" onclick='courierForm(${JSON.stringify(c).replace(/'/g, "&#39;")})'>✏️</button></td></tr>`).join('')}</table></div>`;
 }
 function courierForm(c = {}) {
   modal(`<h3>${c.id ? 'Modifier' : 'Ajouter'} un livreur</h3><form class="f" onsubmit="event.preventDefault();api('/api/couriers${c.id ? '/' + c.id : ''}','${c.id ? 'PUT' : 'POST'}',formData(this)).then(()=>{closeModal();route()})">
   <input name="name" placeholder="Nom" value="${esc(c.name)}" required><input name="company" placeholder="Société" value="${esc(c.company)}">
-  <input name="phone" placeholder="Téléphone" value="${esc(c.phone)}"><label>Tarif par colis<input name="fee_per_parcel" type="number" step="0.01" value="${c.fee_per_parcel ?? 0}"></label>
+  <input name="phone" placeholder="Téléphone" value="${esc(c.phone)}"><input name="email" type="email" placeholder="Email (identifiant de connexion)" value="${esc(c.email)}"><label>Tarif par colis<input name="fee_per_parcel" type="number" step="0.01" value="${c.fee_per_parcel ?? 0}"></label>
   <input name="zones" placeholder="Zones : Kinshasa, Gombe, Lemba" value="${esc(c.zones)}"><button>Enregistrer</button></form>`);
 }
 function courierPay(id) {
@@ -429,3 +429,15 @@ async function settings(v) {
 }
 
 boot();
+
+// ---------- Accès agents / livreurs (email d'invitation) ----------
+async function inviteAccount(type, id) {
+  const r = await api(`/api/accounts/${type}/${id}/invite`, 'POST');
+  const wa = `https://wa.me/${String(r.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent('Créez votre mot de passe Mireb COD : ' + r.link)}`;
+  modal(`<h3>${type === 'agent' ? 'Accès agent' : 'Accès livreur'}</h3>
+  <p>${r.sent ? '✅ Email envoyé à <b>' + esc(r.to) + '</b>' : '⚠️ Email non envoyé : ' + esc(r.reason)}</p>
+  <p class="mut">Identifiant de connexion : <b>${esc(r.to)}</b>. Lien valable 48 h, à envoyer si besoin :</p>
+  <p><code style="word-break:break-all">${esc(r.link)}</code></p>
+  <div class="row"><button onclick="navigator.clipboard.writeText('${esc(r.link)}');toast('Copié')">📋 Copier</button>
+  <a class="btn" target="_blank" href="${wa}">📲 Envoyer par WhatsApp</a></div>`);
+}
