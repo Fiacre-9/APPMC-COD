@@ -43,6 +43,8 @@ router.get('/manifests/:app.json', (req, res) => {
       theme_color: '#1d2330', background_color: '#F5F6F8', description: 'Gérez vos produits et vos commandes.' },
     livreur: { id: '/livreur/', name: `${shop} — Livreur`, short_name: 'Livreur', start_url: `/livreur/${t ? `?t=${t}` : ''}`, scope: '/livreur/',
       theme_color: '#1d2330', background_color: '#F5F6F8', description: 'Vos livraisons, itinéraires et encaissements.' },
+    compte: { id: '/compte.html', name: `${shop} — Mon compte`, short_name: 'Mon compte', start_url: '/compte.html?source=pwa', scope: '/',
+      theme_color: '#1e40d8', background_color: '#F4F6FB', description: 'Connexion des agents et des livreurs : commandes, livraisons et encaissements.' },
     admin: { id: '/admin', name: `${shop} — Gestion COD`, short_name: 'Gestion', start_url: '/', scope: '/',
       theme_color: '#1d2330', background_color: '#F5F6F8', description: 'Commandes, CRM, livreurs, stock et statistiques.' },
   };
