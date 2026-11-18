@@ -8,6 +8,7 @@ const cron = require('node-cron');
 const { db } = require('./db');
 const S = require('./services');
 const conn = require('./connectors');
+const accounts = require('./accounts');
 
 // Sans JWT_SECRET, clé aléatoire : les sessions expirent à chaque redémarrage mais ne sont pas falsifiables
 const SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
@@ -16,6 +17,7 @@ const app = express();
 app.use(express.json({ limit: '12mb', verify: (req, _r, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.set('trust proxy', 1);
 
 // CORS pour le formulaire public intégrable (WordPress, landing pages)
 app.use('/public', (req, res, next) => {
@@ -65,6 +67,8 @@ function auth(req, res, next) {
   catch { res.status(401).json({ error: 'Non connecté' }); }
 }
 
+app.use('/api/accounts', auth, accounts.admin);
+app.use('/compte', accounts.router);
 app.use('/api', auth, require('./routes/api'));
 app.use('/public', require('./routes/public'));
 app.use('/vendor', require('./routes/vendor')(SECRET));
