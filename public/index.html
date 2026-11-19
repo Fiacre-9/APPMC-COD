@@ -1,113 +1,25 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mireb Livreur</title><meta name="theme-color" content="#1e40d8"><link rel="icon" href="/icons/livreur-192.png"><link rel="manifest" id="mf" href="/manifests/livreur.json"><link rel="apple-touch-icon" href="/icons/livreur-apple.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
-<script>/* Le lien personnel reste dans l'adresse : l'app installée (iPhone compris) s'ouvre directement sur le compte */
-(function(){var q=new URLSearchParams(location.search),t=q.get('t');try{t=t||localStorage.getItem('mireb_t')}catch(e){}
-if(t&&/^[a-f0-9]{32}$/.test(t)){document.getElementById('mf').href='/manifests/livreur.json?t='+t;if(!q.get('t'))history.replaceState(null,'','?t='+t)}})();</script>
-<style>
-  :root{ --bleu:#1e40d8; --rouge:#e8342a; --vert:#15803d; --encre:#1d2330; --gris:#6b7280; --fond:#f4f6fb; --carte:#ffffff; --trait:#dfe3ee; }
-  @media (prefers-color-scheme:dark){ :root{ --encre:#e8ecf5; --gris:#9aa3b5; --fond:#0f1420; --carte:#181f2e; --trait:#2a3347; --bleu:#5b7cff; --vert:#4ade80; } }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fond);color:var(--encre);line-height:1.5;min-height:100vh}
-  header{background:#1e40d8;color:#fff;padding:14px 16px 12px;position:sticky;top:0;z-index:5}
-  .ligne{display:flex;justify-content:space-between;align-items:center;gap:10px}
-  header b{font-size:19px}
-  header small{display:block;opacity:.85;font-size:13px;margin-top:2px}
-  .outils{display:flex;gap:6px;flex-shrink:0}
-  .outils button{font:inherit;font-size:14px;font-weight:700;background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:7px 10px;cursor:pointer}
-  .outils button[hidden]{display:none}
-  main{max-width:520px;margin:0 auto;padding:14px 12px 40px}
-  .total{background:var(--carte);border:1px solid var(--trait);border-left:5px solid var(--rouge);border-radius:12px;padding:12px 16px;margin-bottom:12px}
-  .total div{font-size:14px;color:var(--gris)} .total b{font-size:24px}
-  .o{background:var(--carte);border:1px solid var(--trait);border-radius:12px;padding:14px;margin-bottom:10px}
-  .o h3{margin:0 0 4px;font-size:16px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-  .st{font-size:12px;font-weight:600;background:var(--fond);border:1px solid var(--trait);border-radius:99px;padding:2px 10px}
-  .st.route{background:var(--bleu);border-color:var(--bleu);color:#fff}
-  .o p{margin:2px 0;font-size:14px}
-  .du{font-size:20px;margin-top:6px}
-  .a{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-  .a a,.a button{font:inherit;font-weight:700;font-size:15px;padding:12px;border-radius:8px;border:1px solid var(--trait);text-align:center;text-decoration:none;color:var(--encre);background:var(--carte);cursor:pointer}
-  .a .gps{background:var(--bleu);border-color:var(--bleu);color:#fff}
-  .a .ok{background:var(--vert);border-color:var(--vert);color:#fff;grid-column:1/-1}
-  @media (prefers-color-scheme:dark){ .a .ok{color:#06210f} }
-  .a button:disabled{opacity:.5}
-  .m{text-align:center;color:var(--gris);padding:30px 10px}
-  .m a{color:var(--bleu);font-weight:700}
-  #msg{position:fixed;left:12px;right:12px;bottom:16px;max-width:480px;margin:0 auto;background:#1d2330;color:#fff;border-radius:10px;padding:12px 14px;font-size:14px;display:none;z-index:9}
-  :focus-visible{outline:3px solid var(--bleu);outline-offset:2px}
-</style></head>
+<title>Mireb COD</title><link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/icons/admin-192.png"><meta name="theme-color" content="#1d2330"><link rel="manifest" href="/manifests/admin.json"><link rel="apple-touch-icon" href="/icons/admin-apple.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Gestion"></head>
 <body>
-<header>
-  <div class="ligne"><b id="n">Mireb Livreur</b>
-    <div class="outils">
-      <button id="pushbtn" type="button" title="Notifications">🔔</button>
-      <button data-pwa-install hidden type="button" title="Installer l’application">📲</button>
-      <button id="out" type="button">Déconnexion</button>
-    </div></div>
-  <small id="gps">GPS : en attente…</small>
-</header>
-<main>
-  <div id="total" class="total" hidden><div>À encaisser auprès des clients</div><b id="tot">0</b></div>
-  <div id="list"><p class="m">Chargement…</p></div>
-</main>
-<div id="msg" role="status"></div>
-<script>
-const T = new URLSearchParams(location.search).get('t') || (function () { try { return localStorage.getItem('mireb_t'); } catch (e) { return null; } })();
-if (!T) location.replace('/compte.html');
-else try { localStorage.setItem('mireb_t', T); } catch (e) {}
-const $ = s => document.querySelector(s);
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const LABEL = { confirme: 'À livrer', en_preparation: 'En préparation', expedie: 'Expédié', en_livraison: 'En route' };
-const nombre = n => (+n || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
-let busy = false, timers = [];
-const api = (u, m = 'GET', b) => fetch('/public/courier/' + u, { method: m, headers: { 'Content-Type': 'application/json', 'x-token': T },
-  body: b ? JSON.stringify(b) : undefined }).then(r => r.json().catch(() => ({})).then(j => (r.status === 401 ? { error: j.error || 'Lien invalide' } : j)));
-function dire(t) { const m = $('#msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(dire.t); dire.t = setTimeout(() => m.style.display = 'none', 3500); }
-
-async function load() {
-  let d; try { d = await api('me'); } catch (e) { return dire('Pas de connexion internet. Réessayez.'); }
-  if (d.error) { try { localStorage.removeItem('mireb_t'); } catch (e) {}
-    $('#total').hidden = true;
-    return $('#list').innerHTML = '<p class="m">Votre session a expiré ou le lien n’est plus valable.<br><a href="/compte.html?out=1">Se connecter avec mon email</a></p>'; }
-  $('#n').textContent = '🚚 ' + d.name;
-  const sum = d.orders.reduce((s, o) => s + (+o.amount || 0), 0);
-  $('#total').hidden = !d.orders.length; $('#tot').textContent = nombre(sum);
-  d.orders.sort((a, b) => (b.status === 'en_livraison') - (a.status === 'en_livraison') || a.id - b.id);
-  $('#list').innerHTML = d.orders.map(o => `<div class="o">
-    <h3><span>#${o.id} ${esc(o.name)}</span><span class="st ${o.status === 'en_livraison' ? 'route' : ''}">${esc(LABEL[o.status] || o.status)}</span></h3>
-    <p>${esc(o.address)}${o.city ? ', ' + esc(o.city) : ''}</p><p>${esc(o.product_name)} × ${o.qty}</p>
-    <div class="du">À encaisser : <b>${nombre(o.amount)}</b></div>
-    <div class="a"><a href="tel:${esc(o.phone)}">📞 Appeler</a>
-    <a class="gps" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(o.address + ' ' + o.city)}">🧭 Itinéraire GPS</a>
-    <button onclick="act(${o.id},'en_route')" ${o.status === 'en_livraison' ? 'disabled' : ''}>🛵 En route</button><button onclick="act(${o.id},'retour')">↩️ Retour</button>
-    <button class="ok" onclick="act(${o.id},'livre')">✅ Marquer comme livré</button></div></div>`).join('')
-    || '<p class="m">Aucune commande assignée pour le moment 👍</p>';
-}
-async function act(id, a) {
-  if (busy) return;
-  if (a !== 'en_route' && !confirm(a === 'livre' ? 'Confirmer la livraison et l’encaissement ?' : 'Confirmer le retour de cette commande ?')) return;
-  busy = true;
-  try { const r = await api(`orders/${id}/${a}`, 'POST'); if (r.error) dire(r.error); } catch (e) { dire('Pas de connexion internet. Réessayez.'); }
-  busy = false; load();
-}
-function sendPos() {
-  if (!navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition(p => {
-    api('position', 'POST', { lat: p.coords.latitude, lng: p.coords.longitude });
-    $('#gps').textContent = 'GPS actif · ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  }, () => $('#gps').textContent = 'GPS refusé : activez la localisation', { enableHighAccuracy: true });
-}
-$('#out').onclick = async () => {
-  if (!confirm('Vous déconnecter ? Vous devrez vous reconnecter avec votre email et votre mot de passe.')) return;
-  timers.forEach(clearInterval);
-  let compte = false;
-  try { const r = await fetch('/compte/api/courier-logout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': T }, body: '{}' }); compte = !!(await r.json()).account; } catch (e) {}
-  try { localStorage.removeItem('mireb_t'); } catch (e) {}
-  if (!compte) alert('Vous êtes déconnecté de cet appareil. Pour revenir, rouvrez le lien envoyé par l’administrateur.');
-  location.href = '/compte.html?out=1';
-};
-if (T) { load(); sendPos(); timers = [setInterval(sendPos, 30000), setInterval(load, 60000)]; }
-</script>
-<script src="/pwa.js" data-app="Livreur" data-color="#E8342A" data-icon="/icons/livreur-192.png"></script>
-<script>if (T) MirebPush.button(document.getElementById('pushbtn'), '/public/courier/push/subscribe', {}, { 'x-token': T });</script>
+<div id="login" class="login hidden">
+  <form onsubmit="login(event)">
+    <h1>Mireb COD</h1><p class="mut">Connexion administrateur</p>
+    <input name="email" type="email" placeholder="Email" required autocomplete="username">
+    <input name="password" type="password" placeholder="Mot de passe" required autocomplete="current-password">
+    <button>Se connecter</button><div id="lerr" class="err"></div>
+  </form>
+</div>
+<div id="app" class="hidden">
+  <aside><h2>Mireb COD</h2><nav id="nav"></nav><button class="ghost" id="pushbtn">🔔 Notifications</button><button class="ghost" data-pwa-install hidden>📲 Installer l'app</button><button class="ghost" onclick="logout()">Déconnexion</button></aside>
+  <main>
+    <header><button class="burger" onclick="document.body.classList.toggle('open')">☰</button><h1 id="title"></h1></header>
+    <div id="view"></div>
+  </main>
+</div>
+<div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()"><div id="mbox" class="box"></div></div>
+<div id="toast"></div>
+<script src="/markdown.js"></script><script src="/product-editor.js"></script><script src="/app.js"></script><script src="/pwa.js" data-app="Gestion" data-color="#E8342A" data-icon="/icons/admin-192.png"></script>
+<script>MirebPush.button(document.getElementById('pushbtn'), '/api/push/subscribe');</script>
 </body></html>
